@@ -78,8 +78,8 @@ wins.
 | `minFPPVersion` | string | **yes** | Minimum FPP version this entry supports, e.g. `"9.0"`. Compared against the running FPP version. |
 | `maxFPPVersion` | string | **yes** | Maximum FPP version this entry supports. The special values `"0"`, `"0.0"`, or `""` mean **open-ended**, but only within the major named by `minFPPVersion`: if that major matches the running FPP major the entry is unbounded, otherwise FPP caps it at the previous major's `.999` and treats the plugin as **untested** on this release (see below). Use an open-ended max on your newest entry, and bump that entry's `minFPPVersion` to each new FPP major once you've verified the plugin on it. |
 | `branch` | string | **yes** | Git branch FPP checks out when installing this entry. |
-| `sha` | string | **yes** | Specific commit to pin to. Use `""` (empty string) to always install the **latest** commit on `branch`. Pin a real SHA to freeze an entry to a known-good commit (typical for old FPP majors you no longer update); **Update** then fast-forwards only as far as the pinned commit. |
-| `allowUpdates` | integer (`0`/`1`) | optional | Per-version override of the top-level `allowUpdates`. Current FPP holds a pinned `sha` on Update by itself; keep `0` on a pinned entry anyway, because older FPP releases don't honour the pin and would pull newer commits. |
+| `sha` | string | **yes** | Specific commit to pin to. Use `""` (empty string) to always install the **latest** commit on `branch`. A real SHA makes a fresh install check out that commit. On **Update**, FPP 10.2 and later fast-forward only as far as the pin, but FPP 10.1 and older run a plain `git pull` and move to the tip of `branch`. A pin alone therefore does not freeze an old FPP major: give that major its own branch (see the worked example below). |
+| `allowUpdates` | integer (`0`/`1`) | optional | Per-version override of the top-level `allowUpdates`, read by FPP 10.0 and later; FPP 9 and older read only the top-level value. An installed plugin's card is built from the installed copy's `pluginInfo.json`, so on a pinned entry a `0` only takes effect if it was already in the file at the pinned commit. Don't rely on it to hold an old major back; use a branch per major instead. |
 | `platforms` | array of strings | optional | Restrict this entry to specific hardware. If present, the entry only matches when the running platform is in the list. If omitted, the entry matches **all** platforms. See below. |
 | `dependencies` | object | optional | Dependencies ADDITIONAL to the top-level `dependencies` block, installed only when this entry is selected (FPP 10+). See `## dependencies` below. |
 
@@ -98,8 +98,8 @@ wins.
   view spells out *"This plugin has not been updated to work with your version
   of FPP"*), it is hidden from the Basic UI level, and it can only be reached
   from Advanced/Developer. To clear the flag, bump
-  `minFPPVersion` on the open-ended entry to the current major (adding a pinned
-  entry for the old major if you still support it).
+  `minFPPVersion` on the open-ended entry to the current major (adding an
+  entry for the old major, on its own branch, if you still support it).
 - If **no** entry matches and none is open-ended (every `maxFPPVersion` is a
   real version below the running one, or `platforms` excludes this board), the
   plugin is **incompatible**: it appears only in the *Incompatible* section on
@@ -108,29 +108,38 @@ wins.
 
 ### Worked multi-version example
 
-Recommended shape (`fpp-arcade` does something similar): every major you no
-longer develop for is **pinned** to the last commit known to work there, with
-updates off; only the current major tracks the branch tip. Note the last
-entry's `minFPPVersion` is the **current** major (`10.0`); an open-ended entry
-starting at `9.0` would show as *untested* on FPP 10. Never leave an old
-major on `"sha": ""` — those boxes would keep pulling commits made for the
-newer FPP:
+Recommended shape: every major you no longer develop for gets **its own
+branch** (here `fpp9`), cut at the last commit known to work there and only
+ever given commits you have tested on that major. Only the current major
+tracks the main branch. Note the last entry's `minFPPVersion` is the
+**current** major (`10.0`); an open-ended entry starting at `9.0` would show
+as *untested* on FPP 10.
+
+Why a branch and not just a pinned `sha` on the main branch: Update on FPP
+10.1 and older is a plain `git pull` of whichever branch the entry
+installed, and the update check compares against the tip of that branch. A
+box installed at a pinned commit on `master` is therefore shown *Updates
+Available* as soon as `master` moves, and pressing Update takes it to the
+tip, past the pin. A per-entry `"allowUpdates": 0` does not stop this on FPP
+9 (only the top-level value is read there). A branch per major holds on
+every FPP release, and still lets you ship a tested fix to old boxes by
+committing it to that branch. Never leave an old major on the same branch as
+the current one with `"sha": ""` — those boxes would keep pulling commits
+made for the newer FPP:
 
 ```json
 "versions": [
     {
         "minFPPVersion": "7.0",
         "maxFPPVersion": "9.99",
-        "branch": "master",
-        "sha": "4723c22f89200e25d683d73e310f96a922438814",
-        "allowUpdates": 0
+        "branch": "fpp9",
+        "sha": ""
     },
     {
         "minFPPVersion": "10.0",
         "maxFPPVersion": "0",
         "branch": "master",
-        "sha": "",
-        "allowUpdates": 1
+        "sha": ""
     }
 ]
 ```
@@ -755,7 +764,8 @@ These are added by FPP at install time and must **not** be authored in your
   ships this entry will show as *untested* there until `minFPPVersion` is
   bumped to `11.0` (or a second entry is added).
 - Add `platforms` to a version entry to restrict hardware; add more entries to
-  support older FPP majors with pinned commits.
+  support older FPP majors, each on its own branch (see the worked
+  multi-version example).
 - Add `releaseNotesStyle` (see **Release notes** above) to get a Release Notes
   link on the card; without it none is shown.
 
