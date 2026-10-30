@@ -73,9 +73,10 @@
             <div class="card">
                 <div class="card-header d-flex flex-wrap gap-2 align-items-center">
                     <span class="fw-semibold me-auto">Songs</span>
-                    <button id="alMeasure" type="button" class="buttons btn btn-outline-secondary">Measure songs</button>
-                    <button id="alLevelSel" type="button" class="buttons btn btn-success" disabled>Level selected</button>
-                    <button id="alLevelAll" type="button" class="buttons btn btn-outline-success">Level all</button>
+                    <div class="d-flex gap-2">
+                        <button id="alMeasure" type="button" class="buttons btn btn-outline-secondary">Measure songs</button>
+                        <button id="alLevelAll" type="button" class="buttons btn btn-success">Level all</button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div id="alJob" class="d-none mb-3">
@@ -90,16 +91,37 @@
                     </div>
                     <div id="alResult" class="d-none mb-3"></div>
 
-                    <div id="alSummary" class="mb-2"></div>
+                    <!-- At-a-glance numbers -->
+                    <div id="alStats" class="row g-2 mb-3"></div>
 
-                    <div class="table-responsive">
-                        <table class="table table-sm table-hover align-middle mb-2">
+                    <!-- Filters and search -->
+                    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                        <div id="alFilters" class="d-flex flex-wrap gap-1" role="group" aria-label="Show songs">
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill active" aria-pressed="true" data-filter="all">All</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="off">Off target</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="clip">Clipping</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="leveled">Leveled</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="unmeasured">Not measured</button>
+                        </div>
+                        <input id="alSearch" type="search" class="form-control form-control-sm al-search ms-auto" placeholder="Search songs" aria-label="Search songs">
+                    </div>
+
+                    <!-- Selection bar: acts on the ticked songs -->
+                    <div class="d-flex flex-wrap gap-2 align-items-center rounded border bg-body-tertiary px-2 py-1 mb-2">
+                        <span id="alSelText" class="small text-body-secondary me-auto">No songs selected</span>
+                        <button id="alClearSel" type="button" class="btn btn-sm btn-link d-none">Clear</button>
+                        <button id="alLevelSel" type="button" class="buttons btn btn-sm btn-success" disabled>Level selected</button>
+                        <button id="alRestoreSel" type="button" class="buttons btn btn-sm btn-outline-secondary" disabled>Restore originals</button>
+                    </div>
+
+                    <div class="al-scroll mb-2">
+                        <table class="table table-sm table-hover align-middle mb-0">
                             <thead>
                                 <tr>
-                                    <th scope="col" class="text-center"><input id="alSelectAll" class="form-check-input" type="checkbox" aria-label="Select all songs"></th>
-                                    <th scope="col">Song</th>
-                                    <th scope="col" class="text-end">Loudness</th>
-                                    <th scope="col" class="text-end d-none d-sm-table-cell">Peak</th>
+                                    <th scope="col" class="text-center"><input id="alSelectAll" class="form-check-input" type="checkbox" aria-label="Select all shown songs"></th>
+                                    <th scope="col"><button type="button" class="al-sort" data-sort="name">Song <span class="al-sort-icon"></span></button></th>
+                                    <th scope="col" class="text-end"><button type="button" class="al-sort" data-sort="lufs">Loudness <span class="al-sort-icon"></span></button></th>
+                                    <th scope="col" class="text-end d-none d-sm-table-cell"><button type="button" class="al-sort" data-sort="peak">Peak <span class="al-sort-icon"></span></button></th>
                                     <th scope="col" class="d-none d-md-table-cell">Status</th>
                                     <th scope="col" class="text-end"></th>
                                 </tr>
@@ -111,8 +133,7 @@
                     </div>
 
                     <div class="d-flex flex-wrap gap-2 align-items-center">
-                        <button id="alRestoreSel" type="button" class="buttons btn btn-outline-secondary btn-sm" disabled>Restore originals of selected</button>
-                        <span id="alBackupInfo" class="form-text me-auto"></span>
+                        <span id="alBackupInfo" class="small text-body-secondary me-auto"></span>
                         <button id="alDeleteBackups" type="button" class="buttons btn btn-outline-danger btn-sm" disabled>Delete all backups</button>
                     </div>
                 </div>
@@ -128,5 +149,8 @@
 // (Kept outside js/, which FPP would also auto-include without a version.)
 $alScript = __DIR__ . '/assets/audioleveler.js';
 $alVer = file_exists($alScript) ? filemtime($alScript) : time();
+$alStyle = __DIR__ . '/assets/audioleveler.css';
+$alCssVer = file_exists($alStyle) ? filemtime($alStyle) : time();
 ?>
+<link rel="stylesheet" type="text/css" href="plugin.php?plugin=AudioLeveler&amp;file=assets/audioleveler.css&amp;nopage=1&amp;v=<?php echo $alCssVer; ?>">
 <script type="text/javascript" src="plugin.php?plugin=AudioLeveler&amp;file=assets/audioleveler.js&amp;nopage=1&amp;v=<?php echo $alVer; ?>"></script>

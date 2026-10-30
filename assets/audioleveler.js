@@ -8,6 +8,11 @@
     var selected = {};
     var pollTimer = null;
     var lastJobState = null;
+    var shown = [];          // songs currently listed, after filter/search/sort
+    var filter = 'all';
+    var search = '';
+    var sortKey = 'name';
+    var sortDir = 1;
     var lastDone = -1;       // songs finished at the last poll, to refresh the list as each one completes
     var workingOn = '';      // song the running job is on right now
     var workingCmd = '';
@@ -144,56 +149,113 @@
         return '<span class="small text-body-secondary">Original</span>';
     }
 
-    function renderSummary() {
-        var measured = files.filter(function (f) { return f.measured && f.lufs !== null && f.lufs !== undefined; });
-        var el = $id('alSummary');
+    function hasLufs(f) { return f.measured && f.lufs !== null && f.lufs !== undefined; }
+    function clips(f) { return f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0; }
+    function offTarget(f) { return hasLufs(f) && !!options && Math.abs(f.lufs - options.target) > 1; }
+
+    function stat(value, label, cls) {
+        return '<div class="col-6 col-md-3"><div class="al-stat">' +
+            '<div class="al-stat-value ' + (cls || '') + '">' + value + '</div>' +
+            '<div class="al-stat-label">' + label + '</div></div></div>';
+    }
+
+    function renderStats() {
+        var el = $id('alStats');
         if (!files.length) {
-            el.innerHTML = '<span class="text-body-secondary">No songs found in the music folder.</span>';
+            el.innerHTML = '<div class="col-12 text-body-secondary">No songs found in the music folder.</div>';
             return;
         }
-        var parts = [files.length + ' song' + (files.length === 1 ? '' : 's')];
-        if (measured.length < files.length) {
-            parts.push((files.length - measured.length) + ' not measured yet');
-        }
-        if (measured.length) {
+        var measured = files.filter(hasLufs);
+        var spread = '&ndash;', spreadCls = '', spreadLbl = 'loudness spread';
+        if (measured.length > 1) {
             var lo = Math.min.apply(null, measured.map(function (f) { return f.lufs; }));
             var hi = Math.max.apply(null, measured.map(function (f) { return f.lufs; }));
-            parts.push('loudness ranges from ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + ' LUFS (' + (hi - lo).toFixed(1) + ' dB apart)');
-            var clip = measured.filter(function (f) { return f.peak !== null && f.peak > 0; }).length;
-            if (clip) { parts.push(clip + ' clipping'); }
-            var off = measured.filter(function (f) { return Math.abs(f.lufs - options.target) > 1; }).length;
-            parts.push(off ? off + ' more than 1 dB off your target' : 'all within 1 dB of your target');
+            spread = (hi - lo).toFixed(1) + ' <small class="fw-normal">dB</small>';
+            spreadCls = hi - lo <= 2 ? 'text-success' : (hi - lo <= 6 ? 'text-warning-emphasis' : 'text-danger');
+            spreadLbl = 'spread, ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + ' LUFS';
         }
-        el.innerHTML = '<span class="form-text">' + esc(parts.join(' · ')) + '</span>';
+        var clipN = measured.filter(clips).length;
+        var offN = measured.filter(offTarget).length;
+        var notM = files.length - measured.length;
+        el.innerHTML =
+            stat(files.length, notM ? notM + ' not measured yet' : 'songs, all measured') +
+            stat(spread, esc(spreadLbl), spreadCls) +
+            stat(clipN, 'clipping', clipN ? 'text-danger' : 'text-success') +
+            stat(offN, 'more than 1 dB off ' + options.target + ' LUFS', offN ? 'text-warning-emphasis' : 'text-success');
+    }
+
+    // Meter range in LUFS: quiet end to loud end.
+    var METER_LO = -30, METER_HI = -3;
+
+    function meterHtml(f) {
+        if (!hasLufs(f)) { return ''; }
+        var pos = function (v) { return Math.max(0, Math.min(100, 100 * (v - METER_LO) / (METER_HI - METER_LO))); };
+        var d = Math.abs(f.lufs - options.target);
+        var bg = d <= 1 ? 'bg-success' : (d <= 4 ? 'bg-warning' : 'bg-danger');
+        return '<div class="al-meter" aria-hidden="true">' +
+            '<div class="al-meter-fill ' + bg + '" style="width:' + pos(f.lufs).toFixed(1) + '%"></div>' +
+            '<div class="al-meter-target" style="left:' + pos(options.target).toFixed(1) + '%"></div></div>';
+    }
+
+    function visibleFiles() {
+        var q = search.trim().toLowerCase();
+        var list = files.filter(function (f) {
+            if (q && f.name.toLowerCase().indexOf(q) < 0) { return false; }
+            switch (filter) {
+                case 'off': return offTarget(f);
+                case 'clip': return clips(f);
+                case 'leveled': return !!f.leveled;
+                case 'unmeasured': return !hasLufs(f);
+                default: return true;
+            }
+        });
+        list.sort(function (a, b) {
+            if (sortKey === 'name') { return sortDir * a.name.localeCompare(b.name); }
+            var av = sortKey === 'lufs' ? (hasLufs(a) ? a.lufs : null) : (a.measured ? a.peak : null);
+            var bv = sortKey === 'lufs' ? (hasLufs(b) ? b.lufs : null) : (b.measured ? b.peak : null);
+            if (av === null || av === undefined) { return (bv === null || bv === undefined) ? a.name.localeCompare(b.name) : 1; }
+            if (bv === null || bv === undefined) { return -1; }
+            return sortDir * (av - bv) || a.name.localeCompare(b.name);
+        });
+        return list;
+    }
+
+    function renderSortIcons() {
+        Array.prototype.forEach.call(document.querySelectorAll('#audioLeveler .al-sort'), function (b) {
+            var k = b.getAttribute('data-sort');
+            b.querySelector('.al-sort-icon').textContent = k === sortKey ? (sortDir > 0 ? '▲' : '▼') : '';
+            b.closest('th').setAttribute('aria-sort', k === sortKey ? (sortDir > 0 ? 'ascending' : 'descending') : 'none');
+        });
     }
 
     function renderRows() {
+        renderStats();
+        renderSortIcons();
         var tb = $id('alRows');
+        shown = visibleFiles();
         if (!files.length) {
-            tb.innerHTML = '<tr><td colspan="6" class="text-body-secondary">No songs in the music folder.</td></tr>';
-            renderSummary();
-            updateButtons();
-            return;
+            tb.innerHTML = '<tr><td colspan="6" class="text-body-secondary py-3 text-center">No songs in the music folder.</td></tr>';
+        } else if (!shown.length) {
+            tb.innerHTML = '<tr><td colspan="6" class="text-body-secondary py-3 text-center">No songs match this filter.</td></tr>';
+        } else {
+            tb.innerHTML = shown.map(function (f, i) {
+                var lufs = hasLufs(f) ? f.lufs.toFixed(1) : '&ndash;';
+                var peak = f.measured && f.peak !== null && f.peak !== undefined ? f.peak.toFixed(1) : '&ndash;';
+                var restore = f.backup
+                    ? '<button type="button" class="buttons btn btn-sm btn-outline-secondary al-restore" data-i="' + i + '" title="Put the original back">Restore</button>'
+                    : '';
+                return '<tr' + (selected[f.name] ? ' class="table-active"' : '') + '>' +
+                    '<td class="text-center"><input class="form-check-input al-sel" type="checkbox" data-i="' + i + '"' +
+                    (selected[f.name] ? ' checked' : '') + ' aria-label="Select ' + esc(f.name) + '"></td>' +
+                    '<td class="text-break">' + esc(f.name) +
+                    '<div class="d-md-none">' + statusHtml(f) + '</div></td>' +
+                    '<td class="text-end text-nowrap ' + lufsClass(f) + '">' + lufs + meterHtml(f) + '</td>' +
+                    '<td class="text-end text-nowrap d-none d-sm-table-cell">' + peak + '</td>' +
+                    '<td class="d-none d-md-table-cell text-nowrap">' + statusHtml(f) + '</td>' +
+                    '<td class="text-end">' + restore + '</td>' +
+                    '</tr>';
+            }).join('');
         }
-        var html = files.map(function (f, i) {
-            var lufs = f.measured && f.lufs !== null && f.lufs !== undefined ? f.lufs.toFixed(1) : '&ndash;';
-            var peak = f.measured && f.peak !== null && f.peak !== undefined ? f.peak.toFixed(1) : '&ndash;';
-            var restore = f.backup
-                ? '<button type="button" class="buttons btn btn-sm btn-outline-secondary al-restore" data-i="' + i + '" title="Put the original back">Restore</button>'
-                : '';
-            return '<tr>' +
-                '<td class="text-center"><input class="form-check-input al-sel" type="checkbox" data-i="' + i + '"' +
-                (selected[f.name] ? ' checked' : '') + ' aria-label="Select ' + esc(f.name) + '"></td>' +
-                '<td class="text-break">' + esc(f.name) +
-                '<div class="d-md-none">' + statusHtml(f) + '</div></td>' +
-                '<td class="text-end text-nowrap ' + lufsClass(f) + '">' + lufs + '</td>' +
-                '<td class="text-end text-nowrap d-none d-sm-table-cell">' + peak + '</td>' +
-                '<td class="d-none d-md-table-cell text-nowrap">' + statusHtml(f) + '</td>' +
-                '<td class="text-end">' + restore + '</td>' +
-                '</tr>';
-        }).join('');
-        tb.innerHTML = html;
-        renderSummary();
         updateButtons();
     }
 
@@ -211,12 +273,18 @@
         $id('alMeasure').disabled = b || !files.length;
         $id('alLevelAll').disabled = b || !files.length;
         $id('alLevelSel').disabled = b || !sel.length;
-        $id('alLevelSel').textContent = sel.length ? 'Level selected (' + sel.length + ')' : 'Level selected';
         var selWithBackup = files.filter(function (f) { return selected[f.name] && f.backup; }).length;
         $id('alRestoreSel').disabled = b || !selWithBackup;
+        $id('alSelText').textContent = sel.length
+            ? sel.length + ' song' + (sel.length === 1 ? '' : 's') + ' selected' +
+              (selWithBackup ? ' · ' + selWithBackup + ' with an original to restore' : '')
+            : 'No songs selected. Tick songs to level or restore just those.';
+        $id('alClearSel').classList.toggle('d-none', !sel.length);
+        $id('alMeasure').textContent = sel.length ? 'Measure selected' : 'Measure songs';
         var all = $id('alSelectAll');
-        all.checked = files.length > 0 && sel.length === files.length;
-        all.indeterminate = sel.length > 0 && sel.length < files.length;
+        var shownSel = shown.filter(function (f) { return selected[f.name]; }).length;
+        all.checked = shown.length > 0 && shownSel === shown.length;
+        all.indeterminate = shownSel > 0 && shownSel < shown.length;
     }
 
     function loadFiles() {
@@ -362,22 +430,49 @@
 
         $id('alRows').addEventListener('change', function (e) {
             if (e.target.classList.contains('al-sel')) {
-                var f = files[+e.target.getAttribute('data-i')];
+                var f = shown[+e.target.getAttribute('data-i')];
                 if (f) { selected[f.name] = e.target.checked; }
+                e.target.closest('tr').classList.toggle('table-active', e.target.checked);
                 updateButtons();
             }
         });
         $id('alRows').addEventListener('click', function (e) {
             var btn = e.target.closest('.al-restore');
             if (!btn || busy()) { return; }
-            var f = files[+btn.getAttribute('data-i')];
+            var f = shown[+btn.getAttribute('data-i')];
             if (f) { start('restore', { files: [f.name] }); }
         });
         $id('alSelectAll').addEventListener('change', function () {
+            // Acts on the songs currently shown, so "Clipping" + tick all
+            // selects exactly the clipping songs.
             var on = this.checked;
-            selected = {};
-            if (on) { files.forEach(function (f) { selected[f.name] = true; }); }
+            shown.forEach(function (f) { selected[f.name] = on; });
             renderRows();
+        });
+        $id('alClearSel').addEventListener('click', function () {
+            selected = {};
+            renderRows();
+        });
+        $id('alFilters').addEventListener('click', function (e) {
+            var b = e.target.closest('[data-filter]');
+            if (!b) { return; }
+            filter = b.getAttribute('data-filter');
+            Array.prototype.forEach.call(this.querySelectorAll('[data-filter]'), function (x) {
+                x.classList.toggle('active', x === b);
+                x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+            });
+            renderRows();
+        });
+        $id('alSearch').addEventListener('input', function () {
+            search = this.value;
+            renderRows();
+        });
+        Array.prototype.forEach.call(document.querySelectorAll('#audioLeveler .al-sort'), function (b) {
+            b.addEventListener('click', function () {
+                var k = b.getAttribute('data-sort');
+                if (k === sortKey) { sortDir = -sortDir; } else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
+                renderRows();
+            });
         });
 
         $id('alMeasure').addEventListener('click', function () {

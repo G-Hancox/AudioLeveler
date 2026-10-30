@@ -1,0 +1,101 @@
+/* Audio Leveler page styles. Scoped to #audioLeveler and built only on
+   Bootstrap's theme variables, so light and dark themes both work. */
+
+/* Song list scrolls inside its own box, header pinned at the top. */
+#audioLeveler .al-scroll {
+    max-height: 60vh;
+    overflow: auto;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+}
+#audioLeveler .al-scroll thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background-color: var(--bs-body-bg);
+    box-shadow: inset 0 -1px 0 var(--bs-border-color);
+    white-space: nowrap;
+}
+#audioLeveler .al-scroll tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+/* Sortable column headings */
+#audioLeveler .al-sort {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+#audioLeveler .al-sort-icon {
+    display: inline-block;
+    width: 0.8em;
+    color: var(--bs-secondary-color);
+}
+
+/* Small loudness meter under each number, with a tick at the target */
+#audioLeveler .al-meter {
+    position: relative;
+    height: 0.35rem;
+    min-width: 4.5rem;
+    margin-top: 0.3rem;
+    border-radius: 1rem;
+    background-color: var(--bs-secondary-bg);
+}
+#audioLeveler .al-meter-fill {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    border-radius: 1rem;
+}
+#audioLeveler .al-meter-target {
+    position: absolute;
+    top: -0.2rem;
+    bottom: -0.2rem;
+    width: 2px;
+    margin-left: -1px;
+    background-color: var(--bs-emphasis-color);
+    opacity: 0.55;
+}
+
+/* At-a-glance tiles */
+#audioLeveler .al-stat {
+    height: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    background-color: var(--bs-tertiary-bg);
+}
+#audioLeveler .al-stat-value {
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+#audioLeveler .al-stat-label {
+    font-size: 0.8rem;
+    color: var(--bs-secondary-color);
+}
+
+#audioLeveler .al-search {
+    width: auto;
+    min-width: 10rem;
+    max-width: 100%;
+    flex: 1 1 10rem;
+}
+@media (min-width: 768px) {
+    #audioLeveler .al-search {
+        flex: 0 1 14rem;
+    }
+}
+
+/* FPP's button styles only fade solid buttons when disabled; make every
+   disabled button on this page read as unavailable. */
+#audioLeveler .btn:disabled,
+#audioLeveler .btn.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+}
