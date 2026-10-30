@@ -120,22 +120,28 @@
     var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring' };
 
     function statusHtml(f) {
+        var clip = f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0
+            ? ' <span class="badge text-bg-danger">clips</span>' : '';
+        return statusText(f) + clip;
+    }
+
+    function statusText(f) {
         if (busy() && workingOn && f.name === workingOn) {
             return '<span class="badge text-bg-primary"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
                 esc(WORKING_NAMES[workingCmd] || 'Working') + '…</span>';
         }
         if (f.leveled) {
             var l = f.leveled;
-            return '<span class="badge text-bg-success">Leveled</span> <span class="form-text">' +
+            return '<span class="badge text-bg-success">Leveled</span> <span class="small text-body-secondary">' +
                 esc(l.target + ' LUFS, ' + (MODE_NAMES[l.mode] || l.mode)) + '</span>';
         }
         if (f.changedSinceLeveled) {
             return '<span class="badge text-bg-warning">Replaced since leveling</span>';
         }
         if (!f.measured) {
-            return '<span class="form-text">Not measured yet</span>';
+            return '<span class="small text-body-secondary">Not measured yet</span>';
         }
-        return '<span class="form-text">Original</span>';
+        return '<span class="small text-body-secondary">Original</span>';
     }
 
     function renderSummary() {
@@ -172,7 +178,6 @@
         var html = files.map(function (f, i) {
             var lufs = f.measured && f.lufs !== null && f.lufs !== undefined ? f.lufs.toFixed(1) : '&ndash;';
             var peak = f.measured && f.peak !== null && f.peak !== undefined ? f.peak.toFixed(1) : '&ndash;';
-            var clip = f.measured && f.peak > 0 ? ' <span class="badge text-bg-danger">clips</span>' : '';
             var restore = f.backup
                 ? '<button type="button" class="buttons btn btn-sm btn-outline-secondary al-restore" data-i="' + i + '" title="Put the original back">Restore</button>'
                 : '';
@@ -182,8 +187,8 @@
                 '<td class="text-break">' + esc(f.name) +
                 '<div class="d-md-none">' + statusHtml(f) + '</div></td>' +
                 '<td class="text-end text-nowrap ' + lufsClass(f) + '">' + lufs + '</td>' +
-                '<td class="text-end text-nowrap d-none d-sm-table-cell">' + peak + clip + '</td>' +
-                '<td class="d-none d-md-table-cell">' + statusHtml(f) + '</td>' +
+                '<td class="text-end text-nowrap d-none d-sm-table-cell">' + peak + '</td>' +
+                '<td class="d-none d-md-table-cell text-nowrap">' + statusHtml(f) + '</td>' +
                 '<td class="text-end">' + restore + '</td>' +
                 '</tr>';
         }).join('');

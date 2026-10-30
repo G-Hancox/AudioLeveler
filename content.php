@@ -120,3 +120,13 @@
         </div>
     </div>
 </div>
+
+<?php
+// FPP serves plugin files with a one-year browser cache, so a fixed script
+// address would keep running an old copy after an update. The file's
+// modification time in the address makes each new version load by itself.
+// (Kept outside js/, which FPP would also auto-include without a version.)
+$alScript = __DIR__ . '/assets/audioleveler.js';
+$alVer = file_exists($alScript) ? filemtime($alScript) : time();
+?>
+<script type="text/javascript" src="plugin.php?plugin=AudioLeveler&amp;file=assets/audioleveler.js&amp;nopage=1&amp;v=<?php echo $alVer; ?>"></script>

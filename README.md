@@ -40,7 +40,7 @@ Newer FPP builds include a Normalize button in File Manager that stores a per-so
 
 | Path | Purpose |
 |---|---|
-| `content.php`, `js/audioleveler.js` | The Content Setup page |
+| `content.php`, `assets/audioleveler.js` | The Content Setup page |
 | `api.php` | `/api/plugin/AudioLeveler/...` endpoints |
 | `bin/leveler.py` | Background worker that runs ffmpeg |
 | `about.php` | Help page |
