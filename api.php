@@ -97,6 +97,13 @@ function AudioLevelerIsAudio($name)
     return in_array($ext, array('mp3', 'm4a', 'aac', 'ogg', 'oga', 'wav', 'flac'));
 }
 
+// Progress and song lists change constantly; make sure no browser or proxy
+// hands the page an old copy.
+function AudioLevelerNoCache()
+{
+    header('Cache-Control: no-store, max-age=0');
+}
+
 function AudioLevelerError($code, $msg)
 {
     http_response_code($code);
@@ -208,6 +215,7 @@ function AudioLevelerStart($command, $request)
 // GET /api/plugin/AudioLeveler/files
 function AudioLevelerFiles()
 {
+    AudioLevelerNoCache();
     $music = AudioLevelerMusicDir();
     $data = AudioLevelerDataDir();
     $analysis = AudioLevelerReadJson($data . '/analysis.json', array());
@@ -276,6 +284,7 @@ function AudioLevelerFiles()
 // GET /api/plugin/AudioLeveler/job
 function AudioLevelerJob()
 {
+    AudioLevelerNoCache();
     $job = AudioLevelerJobData();
     $job['status'] = 'OK';
     return json($job);
@@ -350,6 +359,7 @@ function AudioLevelerOptions()
 // GET /api/plugin/AudioLeveler/options
 function AudioLevelerGetOptions()
 {
+    AudioLevelerNoCache();
     return json(array('status' => 'OK', 'options' => AudioLevelerOptions()));
 }
 

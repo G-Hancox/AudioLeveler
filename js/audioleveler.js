@@ -25,7 +25,12 @@
     }
 
     function api(method, path, body) {
-        var init = { method: method, headers: {} };
+        // Never reuse a stored reply: progress and song lists change every few
+        // seconds, and a cached copy makes the page look frozen.
+        var init = { method: method, headers: {}, cache: 'no-store' };
+        if (method === 'GET') {
+            path += (path.indexOf('?') < 0 ? '?' : '&') + '_=' + Date.now();
+        }
         if (body !== undefined) {
             init.headers['Content-Type'] = 'application/json';
             init.body = JSON.stringify(body);
