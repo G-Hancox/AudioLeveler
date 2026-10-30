@@ -8,6 +8,9 @@
     var selected = {};
     var pollTimer = null;
     var lastJobState = null;
+    var lastDone = -1;       // songs finished at the last poll, to refresh the list as each one completes
+    var workingOn = '';      // song the running job is on right now
+    var workingCmd = '';
     var deleteArmed = false;
 
     function $id(id) { return document.getElementById(id); }
@@ -114,7 +117,13 @@
         return 'text-danger';
     }
 
+    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring' };
+
     function statusHtml(f) {
+        if (busy() && workingOn && f.name === workingOn) {
+            return '<span class="badge text-bg-primary"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
+                esc(WORKING_NAMES[workingCmd] || 'Working') + '…</span>';
+        }
         if (f.leveled) {
             var l = f.leveled;
             return '<span class="badge text-bg-success">Leveled</span> <span class="form-text">' +
@@ -244,8 +253,27 @@
             $id('alJobText').textContent = txt;
             $id('alJobMsg').textContent = j.message || '';
             $id('alJobBar').classList.toggle('bg-warning', state === 'waiting');
+
+            // Show each song's new numbers as soon as it is finished, and mark
+            // the one being worked on, instead of waiting for the whole job.
+            var cur = state === 'starting' ? '' : (j.current || '');
+            if (done !== lastDone) {
+                lastDone = done;
+                workingOn = cur;
+                workingCmd = j.cmd || '';
+                loadFiles();
+            } else if (cur !== workingOn) {
+                workingOn = cur;
+                workingCmd = j.cmd || '';
+                renderRows();
+            }
         } else {
             box.classList.add('d-none');
+            lastDone = -1;
+            if (workingOn) {
+                workingOn = '';
+                renderRows();
+            }
             if (wasBusy) {
                 showResult(j);
                 loadFiles();
