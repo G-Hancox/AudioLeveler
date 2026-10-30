@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # AudioLeveler uninstall script. Safe to run more than once.
 
 : "${FPPDIR:=/opt/fpp}"
