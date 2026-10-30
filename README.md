@@ -1,40 +1,52 @@
-# fpp-plugin-Template
-Template plugin for FPP Plugin developers
+# Audio Leveler for FPP
 
-Ships with `LICENSE` defaulted to GPLv2 (the convention most FPP plugins use).
-Replace it with a license of your own choosing if you'd prefer — just keep
-*some* `LICENSE`/`COPYING` file in the repo root for redistribution clarity.
+An FPP plugin that makes every song in your show play at the same loudness, so nothing whispers and nothing blasts.
 
-## Building a plugin
+It measures each song in FPP's music folder (EBU R128 integrated loudness in LUFS, plus true peak), then levels it to a target you choose:
 
-- [`PLUGIN_GUIDELINES.md`](PLUGIN_GUIDELINES.md) - rules and conventions for a
-  well-behaved plugin, including §14 on privacy and personal data (what must
-  be disclosed, and how FPP colours the install dialog from your `privacy`
-  block). Read this (or point your AI assistant at it) before you
-  start, and again whenever you add a feature.
-- [`PLUGININFO_FORMAT.md`](PLUGININFO_FORMAT.md) - the `pluginInfo.json`
-  metadata format reference, including the `privacy` block.
+| Leveling type | What it does |
+|---|---|
+| **Volume only** | Turns each song up or down. Never changes the sound, but a quiet song with big peaks may stop short of the target instead of clipping. |
+| **Loudness match + peak limiter** (default) | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
+| **Light compression** | Also narrows the gap between a song's quiet and loud parts (2:1 above -20 dBFS). Good outdoors or over FM. |
 
-Two browser tools on fpp-data's site help with `pluginInfo.json` (nothing
-leaves your browser except reads of your own public repo):
+Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
 
-- [**Privacy disclosure builder**](https://falconchristmas.github.io/fpp-data/plugin_privacy_builder/) -
-  writes the `privacy` block for you, one key at a time, with the same rules
-  the listing check applies. Pre-fills from your repo
-  (`?repo=owner/repo`) or from pasted JSON, and edits a block you already have.
-- [**Plugin preview**](https://falconchristmas.github.io/fpp-data/plugin_preview/) -
-  renders your `pluginInfo.json` as FPP's Plugin Manager will show it (card,
-  six privacy dots, install dialog) using FPP's own renderer. Check it before
-  you submit, and again whenever you change the block.
+## Safe for a running show
 
-**These two files document how to build a plugin in general - they aren't part
-of your plugin.** Once you've forked this template, delete
-`PLUGIN_GUIDELINES.md` and `PLUGININFO_FORMAT.md` from your own repo; they
-should only ever live here, in fpp-plugin-Template.
+- **Timing is kept.** File names, format and sample rate stay the same. Every leveled file is checked against the original, and if its length differs by more than 0.15 s it is thrown away and the original is kept.
+- **It never interrupts the show.** Work runs in the background at the lowest CPU and disk priority. By default it waits until no show is playing, and it never swaps a song while that song is playing.
+- **Files are swapped in one step.** The new file is written separately and renamed over the old one only after it has been checked.
+- **Originals are backed up** to `plugindata/AudioLeveler/backups/` with one-click restore. Leveling again always starts from the original, so trying different settings doesn't build up encoding loss. Backups are kept on uninstall.
 
-## Getting your plugin listed
+## Using it
 
-Once it's built, submit it via
-[fpp-data](https://github.com/FalconChristmas/fpp-data) - see that repo's
-`README.md` for the submission form and `PLUGINS.md` for the rules.
+**Content Setup → Audio Leveler**
 
+1. **Measure songs** lists each song's loudness and peak. Songs far from the target show in red, and songs that already distort are flagged as clipping.
+2. Choose a target and leveling type.
+3. Press **Level all**, or tick songs and press **Level selected**.
+4. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
+
+## Requirements
+
+`ffmpeg` and `python3`, both included on standard FPP images. `ffmpeg` is declared as a dependency and installed if missing.
+
+## Relation to FPP's built-in Normalize
+
+Newer FPP builds include a Normalize button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless, but there is no limiter, so songs can only be raised as far as their peaks allow. This plugin rewrites the files instead, which lets it limit or compress so songs can reach louder targets. It also works on older FPP versions. FPP skips its own playback gain for any file whose size has changed, so the two never stack.
+
+## Files
+
+| Path | Purpose |
+|---|---|
+| `content.php`, `js/audioleveler.js` | The Content Setup page |
+| `api.php` | `/api/plugin/AudioLeveler/...` endpoints |
+| `bin/leveler.py` | Background worker that runs ffmpeg |
+| `about.php` | Help page |
+
+The log is `logs/plugin-AudioLeveler.log`.
+
+## License
+
+GPLv2. See `LICENSE`.
