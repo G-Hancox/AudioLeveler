@@ -566,9 +566,32 @@ def main():
     ap.add_argument("--request", help="JSON file with the job options")
     args = ap.parse_args()
 
-    logging.basicConfig(filename=args.log, level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
+    log_problem = None
+    try:
+        logging.basicConfig(filename=args.log, level=logging.INFO,
+                            format="%(asctime)s %(levelname)s %(message)s")
+    except OSError as ex:
+        # Can't write the log (e.g. it was created by root). Keep working and
+        # report through job.json instead, so the page still shows progress.
+        log_problem = "can't write the plugin log (%s)" % ex.strerror
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    try:
+        return run_job(args, log_problem)
+    except Exception as ex:
+        logging.exception("Audio Leveler worker failed to start")
+        try:
+            write_json(os.path.join(args.data, "job.json"),
+                       {"cmd": args.command, "state": "error", "finished": now(), "results": [],
+                        "message": "The worker could not start: %s" % ex})
+        except Exception:
+            pass
+        return 1
+
+
+def run_job(args, log_problem):
+    if log_problem:
+        logging.warning("Audio Leveler %s", log_problem)
     os.makedirs(args.data, exist_ok=True)
     lock = open(os.path.join(args.data, "worker.lock"), "w")
     try:

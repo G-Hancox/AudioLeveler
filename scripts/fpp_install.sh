@@ -7,6 +7,9 @@ set -e
 
 PLUGIN_LOG="${LOGDIR}/plugin-AudioLeveler.log"
 echo "$(date '+%Y-%m-%d %H:%M:%S') Installing Audio Leveler" >> "$PLUGIN_LOG"
+# This script runs as root, but the page and the worker run as FPP's own user
+# and append to the same log, so hand the file to that user.
+chown "${FPPUSER:-fpp}:${FPPGROUP:-fpp}" "$PLUGIN_LOG" 2>/dev/null || true
 
 # ffmpeg is declared in pluginInfo.json "dependencies", which FPP 10+ installs
 # for us. FPP 9 and older ignore that block, so install it here as a fallback,
@@ -19,7 +22,7 @@ fi
 
 DATADIR="${MEDIADIR}/plugindata/AudioLeveler"
 mkdir -p "${DATADIR}/backups" "${DATADIR}/tmp"
-chown -R fpp:fpp "${DATADIR}" 2>/dev/null || true
+chown -R "${FPPUSER:-fpp}:${FPPGROUP:-fpp}" "${DATADIR}" 2>/dev/null || true
 chmod +x "$(dirname "$0")/../bin/leveler.py" 2>/dev/null || true
 
 exit 0

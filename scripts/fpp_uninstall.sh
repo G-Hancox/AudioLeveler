@@ -22,8 +22,10 @@ if [ -d "${DATADIR}" ]; then
     if [ -d "${DATADIR}/backups" ] && [ -z "$(ls -A "${DATADIR}/backups")" ]; then
         rmdir "${DATADIR}/backups"
     fi
-    rmdir "${DATADIR}" 2>/dev/null || \
+    if ! rmdir "${DATADIR}" 2>/dev/null; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') Uninstalled; original songs kept in ${DATADIR}/backups" >> "$PLUGIN_LOG"
+        chown "${FPPUSER:-fpp}:${FPPGROUP:-fpp}" "$PLUGIN_LOG" 2>/dev/null || true
+    fi
 fi
 
 exit 0

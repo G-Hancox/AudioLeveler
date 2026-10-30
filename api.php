@@ -68,6 +68,12 @@ function AudioLevelerLogFile()
     return rtrim($settings['logDirectory'], '/') . '/plugin-' . AUDIOLEVELER_PLUGIN . '.log';
 }
 
+function AudioLevelerLogWritable()
+{
+    $f = AudioLevelerLogFile();
+    return file_exists($f) ? is_writable($f) : is_writable(dirname($f));
+}
+
 function AudioLevelerLog($msg)
 {
     @file_put_contents(AudioLevelerLogFile(), date('Y-m-d H:i:s') . ' ' . $msg . "\n", FILE_APPEND | LOCK_EX);
@@ -113,7 +119,13 @@ function AudioLevelerJobData()
         $age = time() - (isset($job['requested']) ? intval($job['requested']) : 0);
         if ($age > 30) {
             $job['state'] = 'error';
-            $job['message'] = 'The job did not start. Check the plugin log.';
+            $log = AudioLevelerLogFile();
+            if (file_exists($log) && !is_writable($log)) {
+                $job['message'] = 'The job did not start because the plugin log is not writable. '
+                    . 'Update or reinstall Audio Leveler in the Plugin Manager to fix the file permissions.';
+            } else {
+                $job['message'] = 'The job did not start. Check the plugin log (Help > FPP Logs).';
+            }
         }
     }
     return $job;
@@ -176,14 +188,17 @@ function AudioLevelerStart($command, $request)
         $prio .= ' ionice -c 3';
     }
     $cmd = sprintf(
-        'nohup %s python3 %s %s --music %s --data %s --log %s --request %s > /dev/null 2>&1 &',
+        'nohup %s python3 %s %s --music %s --data %s --log %s --request %s > /dev/null 2>> %s &',
         $prio,
         escapeshellarg($script),
         escapeshellarg($command),
         escapeshellarg(AudioLevelerMusicDir()),
         escapeshellarg($data),
         escapeshellarg(AudioLevelerLogFile()),
-        escapeshellarg($reqFile)
+        escapeshellarg($reqFile),
+        // Anything the worker prints before its own logging is up (a Python
+        // error, a missing tool) goes to the plugin log when we can write it.
+        AudioLevelerLogWritable() ? escapeshellarg(AudioLevelerLogFile()) : '/dev/null'
     );
     exec($cmd);
     AudioLevelerLog("Started $command job");
