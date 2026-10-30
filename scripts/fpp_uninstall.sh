@@ -1,17 +1,28 @@
 #!/bin/bash
+# AudioLeveler uninstall script. Safe to run more than once.
 
-# fpp-plugin-Template uninstall script
+: "${FPPDIR:=/opt/fpp}"
+. "${FPPDIR}/scripts/common"
 
-# This template ships commands/descriptions.json. scripts/uninstall_plugin
-# runs this script and THEN unconditionally deletes the plugin directory -
-# this is the only code that runs before the files are gone. Without
-# requesting a restart here, the removed command type lingers as a ghost in
-# fppd's in-memory list (still selectable in playlists/schedules/events)
-# until fppd restarts for some unrelated reason - fppd only re-reads
-# commands/descriptions.json at its own startup (PluginManager::
-# loadUserPlugins(), src/Plugins.cpp), never on uninstall. Remove this if
-# your plugin doesn't ship commands/descriptions.json or a native
-# (Makefile-built) plugin - not every plugin needs it.
-. ${FPPDIR}/scripts/common
-setSetting restartFlag 1
+PLUGIN_LOG="${LOGDIR}/plugin-AudioLeveler.log"
+DATADIR="${MEDIADIR}/plugindata/AudioLeveler"
 
+# Stop a job that is still running.
+pkill -f "AudioLeveler/bin/leveler.py" 2>/dev/null || true
+
+# Remove working files, but keep the backed-up originals: they are the only
+# copy of the user's songs as they were before leveling. The help page tells
+# the user where they are so they can delete them when they want.
+if [ -d "${DATADIR}" ]; then
+    rm -rf "${DATADIR}/tmp"
+    rm -f "${DATADIR}/analysis.json" "${DATADIR}/leveled.json" "${DATADIR}/job.json" \
+          "${DATADIR}/request.json" "${DATADIR}/cancel" "${DATADIR}/worker.lock" \
+          "${DATADIR}"/*.tmp
+    if [ -d "${DATADIR}/backups" ] && [ -z "$(ls -A "${DATADIR}/backups")" ]; then
+        rmdir "${DATADIR}/backups"
+    fi
+    rmdir "${DATADIR}" 2>/dev/null || \
+        echo "$(date '+%Y-%m-%d %H:%M:%S') Uninstalled; original songs kept in ${DATADIR}/backups" >> "$PLUGIN_LOG"
+fi
+
+exit 0

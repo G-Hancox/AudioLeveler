@@ -1,28 +1,40 @@
 {
-	"documentation": "https://github.com/FalconChristmas/fpp-plugin-Template/blob/master/PLUGININFO_FORMAT.md",
-	"repoName": "fpp-plugin-Template",
-	"name": "Template Plugin for FPP Plugin developers",
-	"author": "John Doe (jdoe)",
-	"description": "This template plugin is designed to make it easier for plugin authors to create new FPP Plugins.  You can manually clone the git repository or install the Template Plugin and then go to the plugin's config page and use the form to copy the template into a new plugin directory.",
-	"homeURL": "https://github.com/FalconChristmas/fpp-plugin-Template",
-	"srcURL": "https://github.com/FalconChristmas/fpp-plugin-Template.git",
-	"bugURL": "https://github.com/FalconChristmas/fpp-plugin-Template/issues",
-	"iconURL": "https://raw.githubusercontent.com/FalconChristmas/fpp-plugin-Template/master/icon.png",
+	"repoName": "AudioLeveler",
+	"name": "Audio Leveler",
+	"author": "G-Hancox",
+	"description": "Makes every song in your show play at the same loudness. Measures each song in the music folder (EBU R128 LUFS and true peak) and levels it to a target you choose, with three leveling types: volume only, loudness match with a peak limiter, or light compression. File names and timing are kept, so sequences stay in sync. Originals are backed up for one-click restore, and work waits until no show is playing. Runs entirely on this device using ffmpeg.",
+	"homeURL": "https://github.com/G-Hancox/AudioLeveler",
+	"srcURL": "https://github.com/G-Hancox/AudioLeveler.git",
+	"bugURL": "https://github.com/G-Hancox/AudioLeveler/issues",
+	"iconURL": "https://raw.githubusercontent.com/G-Hancox/AudioLeveler/master/icon.png",
 	"allowUpdates": 1,
 	"releaseNotesStyle": "gitHistory",
 	"privacy": {
-		"summary": "TEMPLATE TEXT - replace me. Say what this plugin sends, keeps, senses, opens and changes (https://falconchristmas.github.io/fpp-data/plugin_privacy_builder/). If none: Runs on this device only.",
+		"summary": "Runs on this device only. Rewrites the songs you choose to level and keeps backup copies of their originals.",
 		"sends": [],
-		"collects": [],
+		"collects": [
+			{
+				"what": "Backup copies of the songs you level, and their loudness measurements",
+				"about": "operator",
+				"keptDays": null,
+				"canDelete": true,
+				"where": "plugindata/AudioLeveler/"
+			}
+		],
 		"sensors": [],
 		"remoteAccess": "none",
-		"systemChanges": [],
+		"systemChanges": [
+			{
+				"kind": "core-settings",
+				"what": "Replaces songs in FPP's music folder with leveled versions when you press Level (same names; originals backed up unless you turn that off)."
+			}
+		],
 		"closedCode": false,
-		"other": "TEMPLATE TEXT - replace me (write \"none\" if there is nothing to add)."
+		"other": "none"
 	},
 	"versions": [
 		{
-			"minFPPVersion": "9.0",
+			"minFPPVersion": "8.0",
 			"maxFPPVersion": "9.99",
 			"branch": "master",
 			"sha": ""
@@ -35,20 +47,8 @@
 		}
 	],
 	"dependencies": {
-	    "plugins": [
-			"fpp-plugin-CoolPlugin1",
-			"fpp-plugin-CoolPlugin2"
-		],
-	    "packages": [
-			"system-package-name1",
-			"system-package-name2"
-		],
-		"python": [
-			"python-package-name1"
-		],
-		"scripts": [
-			"Control/script-repository-script1",
-			"PixelOverlay/script-repository-script2"
+		"packages": [
+			"ffmpeg"
 		]
 	}
 }
