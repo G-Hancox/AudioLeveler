@@ -20,20 +20,10 @@
     border-bottom: 0;
 }
 
-/* Sortable column headings */
-#audioLeveler .al-sort {
-    background: none;
-    border: 0;
-    padding: 0;
-    color: inherit;
-    font: inherit;
-    font-weight: 600;
-    cursor: pointer;
-}
+/* Sort arrow beside a column heading, kept the same width so headings don't jump. */
 #audioLeveler .al-sort-icon {
     display: inline-block;
     width: 0.8em;
-    color: var(--bs-secondary-color);
 }
 
 /* Small loudness meter under each number, with a tick at the target */
@@ -60,36 +50,6 @@
     margin-left: -1px;
     background-color: var(--bs-emphasis-color);
     opacity: 0.55;
-}
-
-/* At-a-glance tiles */
-#audioLeveler .al-stat {
-    height: 100%;
-    padding: 0.5rem 0.75rem;
-    border: 1px solid var(--bs-border-color);
-    border-radius: var(--bs-border-radius);
-    background-color: var(--bs-tertiary-bg);
-}
-#audioLeveler .al-stat-value {
-    font-size: 1.35rem;
-    font-weight: 600;
-    line-height: 1.2;
-}
-#audioLeveler .al-stat-label {
-    font-size: 0.8rem;
-    color: var(--bs-secondary-color);
-}
-
-#audioLeveler .al-search {
-    width: auto;
-    min-width: 10rem;
-    max-width: 100%;
-    flex: 1 1 10rem;
-}
-@media (min-width: 768px) {
-    #audioLeveler .al-search {
-        flex: 0 1 14rem;
-    }
 }
 
 /* FPP's button styles only fade solid buttons when disabled; make every

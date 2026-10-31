@@ -154,9 +154,9 @@
     function offTarget(f) { return hasLufs(f) && !!options && Math.abs(f.lufs - options.target) > 1; }
 
     function stat(value, label, cls) {
-        return '<div class="col-6 col-md-3"><div class="al-stat">' +
-            '<div class="al-stat-value ' + (cls || '') + '">' + value + '</div>' +
-            '<div class="al-stat-label">' + label + '</div></div></div>';
+        return '<div class="col-6 col-md-3"><div class="h-100 border rounded bg-body-tertiary px-3 py-2">' +
+            '<div class="fs-5 fw-semibold ' + (cls || '') + '">' + value + '</div>' +
+            '<div class="small text-body-secondary">' + label + '</div></div></div>';
     }
 
     function renderStats() {

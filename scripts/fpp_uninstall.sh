@@ -28,4 +28,11 @@ if [ -d "${DATADIR}" ]; then
     fi
 fi
 
+# The saved defaults (target, ceiling, leveling type...) are kept across a
+# Reinstall (FPP sets FPP_PLUGIN_REINSTALL=1 from 10.4), and removed on a real
+# uninstall.
+if [ "${FPP_PLUGIN_REINSTALL:-0}" != "1" ]; then
+    rm -f "${MEDIADIR}/config/plugin.AudioLeveler"
+fi
+
 exit 0

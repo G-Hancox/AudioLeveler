@@ -103,7 +103,7 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="leveled">Leveled</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="unmeasured">Not measured</button>
                         </div>
-                        <input id="alSearch" type="search" class="form-control form-control-sm al-search ms-auto" placeholder="Search songs" aria-label="Search songs">
+                        <input id="alSearch" type="search" class="form-control form-control-sm w-auto ms-auto" placeholder="Search songs" aria-label="Search songs">
                     </div>
 
                     <!-- Selection bar: acts on the ticked songs -->
@@ -119,9 +119,9 @@
                             <thead>
                                 <tr>
                                     <th scope="col" class="text-center"><input id="alSelectAll" class="form-check-input" type="checkbox" aria-label="Select all shown songs"></th>
-                                    <th scope="col"><button type="button" class="al-sort" data-sort="name">Song <span class="al-sort-icon"></span></button></th>
-                                    <th scope="col" class="text-end"><button type="button" class="al-sort" data-sort="lufs">Loudness <span class="al-sort-icon"></span></button></th>
-                                    <th scope="col" class="text-end d-none d-sm-table-cell"><button type="button" class="al-sort" data-sort="peak">Peak <span class="al-sort-icon"></span></button></th>
+                                    <th scope="col"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="name">Song <span class="al-sort-icon text-body-secondary"></span></button></th>
+                                    <th scope="col" class="text-end"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="lufs">Loudness <span class="al-sort-icon text-body-secondary"></span></button></th>
+                                    <th scope="col" class="text-end d-none d-sm-table-cell"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="peak">Peak <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="d-none d-md-table-cell">Status</th>
                                     <th scope="col" class="text-end"></th>
                                 </tr>
@@ -147,10 +147,10 @@
 // address would keep running an old copy after an update. The file's
 // modification time in the address makes each new version load by itself.
 // (Kept outside js/, which FPP would also auto-include without a version.)
-$alScript = __DIR__ . '/assets/audioleveler.js';
-$alVer = file_exists($alScript) ? filemtime($alScript) : time();
-$alStyle = __DIR__ . '/assets/audioleveler.css';
-$alCssVer = file_exists($alStyle) ? filemtime($alStyle) : time();
+$audioLevelerScript = __DIR__ . '/assets/audioleveler.js';
+$audioLevelerVer = file_exists($audioLevelerScript) ? filemtime($audioLevelerScript) : time();
+$audioLevelerStyle = __DIR__ . '/assets/audioleveler.css';
+$audioLevelerCssVer = file_exists($audioLevelerStyle) ? filemtime($audioLevelerStyle) : time();
 ?>
-<link rel="stylesheet" type="text/css" href="plugin.php?plugin=AudioLeveler&amp;file=assets/audioleveler.css&amp;nopage=1&amp;v=<?php echo $alCssVer; ?>">
-<script type="text/javascript" src="plugin.php?plugin=AudioLeveler&amp;file=assets/audioleveler.js&amp;nopage=1&amp;v=<?php echo $alVer; ?>"></script>
+<link rel="stylesheet" type="text/css" href="plugin.php?plugin=AudioLeveler&amp;file=assets/audioleveler.css&amp;nopage=1&amp;v=<?php echo $audioLevelerCssVer; ?>">
+<script type="text/javascript" src="plugin.php?plugin=AudioLeveler&amp;file=assets/audioleveler.js&amp;nopage=1&amp;v=<?php echo $audioLevelerVer; ?>"></script>
