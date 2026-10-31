@@ -558,6 +558,15 @@ class Worker:
 
 
 def main():
+    # Started by fppd through the "Audio Leveler: Start Job" command: the page
+    # left the full command line in a launch file.
+    if len(sys.argv) == 3 and sys.argv[1] == "--launch":
+        launch = read_json(sys.argv[2], {})
+        argv = launch.get("argv")
+        if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
+            return 1
+        sys.argv = [sys.argv[0]] + argv
+
     ap = argparse.ArgumentParser(description="FPP Audio Leveler worker")
     ap.add_argument("command", choices=("analyze", "level", "restore"))
     ap.add_argument("--music", required=True, help="FPP music folder")

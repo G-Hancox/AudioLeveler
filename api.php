@@ -15,8 +15,12 @@
  *   DELETE backups    delete every backed-up original
  *
  * The heavy lifting is done by bin/leveler.py, started in the background at
- * low priority so a web request never waits on ffmpeg.
+ * low priority so a web request never waits on ffmpeg. fppd starts it, through
+ * the plugin's "Audio Leveler: Start Job" command, so a job never runs under
+ * the web server; only when fppd can't be asked is it started from here.
  */
+
+define('AUDIOLEVELER_START_COMMAND', 'Audio Leveler: Start Job');
 
 function getEndpointsAudioLeveler()
 {
@@ -189,6 +193,18 @@ function AudioLevelerStart($command, $request)
         'results' => array(),
     )));
 
+    // The worker's command line, for fppd's Start Job command to run.
+    $argv = array($command, '--music', AudioLevelerMusicDir(), '--data', $data,
+        '--log', AudioLevelerLogFile(), '--request', $reqFile);
+    file_put_contents($data . '/launch.json', json_encode(array('argv' => $argv)));
+
+    if (AudioLevelerStartThroughFppd()) {
+        AudioLevelerLog("Started $command job");
+        return json(array('status' => 'OK'));
+    }
+
+    // fppd isn't running, or hasn't loaded the plugin's command yet (FPP 9
+    // and older until fppd restarts): start the worker from here instead.
     $script = __DIR__ . '/bin/leveler.py';
     $prio = 'nice -n 19';
     if (trim(shell_exec('command -v ionice 2>/dev/null')) !== '') {
@@ -208,8 +224,36 @@ function AudioLevelerStart($command, $request)
         AudioLevelerLogWritable() ? escapeshellarg(AudioLevelerLogFile()) : '/dev/null'
     );
     exec($cmd);
-    AudioLevelerLog("Started $command job");
+    AudioLevelerLog("Started $command job (fppd could not start it)");
     return json(array('status' => 'OK'));
+}
+
+/* Ask fppd to run the Start Job command. False if fppd can't be asked or doesn't have the command. */
+function AudioLevelerStartThroughFppd()
+{
+    // Looked up first: running a command fppd doesn't have puts a warning on every FPP page.
+    $ctx = stream_context_create(array('http' => array('timeout' => 3, 'ignore_errors' => true)));
+    $list = json_decode((string) @file_get_contents('http://127.0.0.1/api/commands', false, $ctx), true);
+    $known = false;
+    foreach (is_array($list) ? $list : array() as $c) {
+        if (is_array($c) && isset($c['name']) && $c['name'] === AUDIOLEVELER_START_COMMAND) {
+            $known = true;
+            break;
+        }
+    }
+    if (!$known) {
+        return false;
+    }
+    $ctx = stream_context_create(array('http' => array(
+        'method' => 'POST',
+        'header' => "Content-Type: application/json\r\n",
+        'content' => '[]',
+        'timeout' => 10,
+        'ignore_errors' => true,
+    )));
+    $ok = @file_get_contents('http://127.0.0.1/api/command/' . rawurlencode(AUDIOLEVELER_START_COMMAND), false, $ctx);
+    $headers = isset($http_response_header) ? $http_response_header : array();
+    return $ok !== false && isset($headers[0]) && preg_match('#^HTTP/\S+\s+200#', $headers[0]);
 }
 
 // GET /api/plugin/AudioLeveler/files

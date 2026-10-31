@@ -15,7 +15,7 @@ Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a cust
 ## Safe for a running show
 
 - **Timing is kept.** File names, format and sample rate stay the same. Every leveled file is checked against the original, and if its length differs by more than 0.15 s it is thrown away and the original is kept.
-- **It never interrupts the show.** Work runs in the background at the lowest CPU and disk priority. By default it waits until no show is playing, and it never swaps a song while that song is playing.
+- **It never interrupts the show.** Work runs in the background at the lowest CPU and disk priority, started by fppd (not the web server), so it stops cleanly with fppd. By default it waits until no show is playing, and it never swaps a song while that song is playing.
 - **Files are swapped in one step.** The new file is written separately and renamed over the old one only after it has been checked.
 - **Originals are backed up** to `plugindata/AudioLeveler/backups/` with one-click restore. Leveling again always starts from the original, so trying different settings doesn't build up encoding loss. Backups are kept on uninstall.
 
@@ -43,6 +43,8 @@ Newer FPP builds include a Normalize button in File Manager that stores a per-so
 | `content.php`, `assets/audioleveler.js` | The Content Setup page |
 | `api.php` | `/api/plugin/AudioLeveler/...` endpoints |
 | `bin/leveler.py` | Background worker that runs ffmpeg |
+| `commands/start_job.sh` | FPP command "Audio Leveler: Start Job": the page asks fppd to run it, and it starts the worker. On its own it does nothing. |
+| `callbacks.sh` | Lets fppd load the plugin without a restart, and asks a running job to stop after its current song when fppd stops or unloads the plugin |
 | `about.php` | Help page |
 
 The log is `logs/plugin-AudioLeveler.log`.

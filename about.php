@@ -30,7 +30,7 @@
                and if its length differs by more than 0.15 seconds, it isn't used and the original is kept.</p>
 
             <h6 class="fw-semibold">Safe during a show</h6>
-            <p>All work runs in the background at the lowest priority. By default it waits until no show is playing. Even with that turned off,
+            <p>All work runs in the background at the lowest priority, started by fppd. (That's what the <b>Audio Leveler: Start Job</b> command in FPP's command lists is for; it does nothing on its own.) By default it waits until no show is playing. Even with that turned off,
                a song is never replaced while it is playing. A new file is written next to the old one and swapped in only once it has been checked,
                so a song is never left half-written.</p>
 

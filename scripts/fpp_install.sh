@@ -25,4 +25,11 @@ mkdir -p "${DATADIR}/backups" "${DATADIR}/tmp"
 chown -R "${FPPUSER:-fpp}:${FPPGROUP:-fpp}" "${DATADIR}" 2>/dev/null || true
 chmod +x "$(dirname "$0")/../bin/leveler.py" 2>/dev/null || true
 
+# FPP 10 and later load the plugin (and its Start Job command) as soon as it is
+# installed. Older FPP only reads plugin commands when fppd starts: until then
+# the page starts jobs itself, and FPP's restart banner asks for a restart.
+if ! grep -q "FPPDPluginLifecycle" "${FPPDIR}/www/api/controllers/plugin.php" 2>/dev/null; then
+    setSetting restartFlag 1
+fi
+
 exit 0

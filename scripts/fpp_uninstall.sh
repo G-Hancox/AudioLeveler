@@ -17,7 +17,7 @@ pkill -f "AudioLeveler/bin/leveler.py" 2>/dev/null || true
 if [ -d "${DATADIR}" ]; then
     rm -rf "${DATADIR}/tmp"
     rm -f "${DATADIR}/analysis.json" "${DATADIR}/leveled.json" "${DATADIR}/job.json" \
-          "${DATADIR}/request.json" "${DATADIR}/cancel" "${DATADIR}/worker.lock" \
+          "${DATADIR}/request.json" "${DATADIR}/launch.json" "${DATADIR}/cancel" "${DATADIR}/worker.lock" \
           "${DATADIR}"/*.tmp
     if [ -d "${DATADIR}/backups" ] && [ -z "$(ls -A "${DATADIR}/backups")" ]; then
         rmdir "${DATADIR}/backups"
@@ -26,6 +26,12 @@ if [ -d "${DATADIR}" ]; then
         echo "$(date '+%Y-%m-%d %H:%M:%S') Uninstalled; original songs kept in ${DATADIR}/backups" >> "$PLUGIN_LOG"
         chown "${FPPUSER:-fpp}:${FPPGROUP:-fpp}" "$PLUGIN_LOG" 2>/dev/null || true
     fi
+fi
+
+# FPP 10 and later unload the plugin's command live; older FPP keeps listing it
+# until fppd restarts.
+if ! grep -q "FPPDPluginLifecycle" "${FPPDIR}/www/api/controllers/plugin.php" 2>/dev/null; then
+    setSetting restartFlag 1
 fi
 
 # The saved defaults (target, ceiling, leveling type...) are kept across a

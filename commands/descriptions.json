@@ -1,0 +1,8 @@
+[
+    {
+        "name": "Audio Leveler: Start Job",
+        "description": "Starts the measuring, leveling or restoring job queued on the Audio Leveler page. The page runs this itself; on its own it does nothing.",
+        "script": "start_job.sh",
+        "args": []
+    }
+]
