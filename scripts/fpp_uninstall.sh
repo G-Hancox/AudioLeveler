@@ -30,7 +30,8 @@ fi
 
 # FPP 10 and later unload the plugin's command live; older FPP keeps listing it
 # until fppd restarts.
-if ! grep -q "FPPDPluginLifecycle" "${FPPDIR}/www/api/controllers/plugin.php" 2>/dev/null; then
+FPP_MAJOR="$(curl -s -m 10 http://127.0.0.1/api/fppd/version 2>/dev/null | sed -n 's/.*"majorVersion" *: *\([0-9]*\).*/\1/p')"
+if [ -z "${FPP_MAJOR}" ] || [ "${FPP_MAJOR}" -lt 10 ]; then
     setSetting restartFlag 1
 fi
 
