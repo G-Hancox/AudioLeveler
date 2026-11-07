@@ -54,7 +54,12 @@
             <h6 class="fw-semibold">Choosing a target</h6>
             <p>LUFS measures how loud a song sounds, not just its peaks. -14 LUFS is what streaming services use and leaves room for punchy peaks.
                Go to -12 or -10 for a louder signal into an FM transmitter, or -16 for a quieter, more natural sound.
-               All songs end up the same loudness either way; FPP's volume decides how loud the show is.</p>
+               All songs end up the same loudness either way; FPP's volume decides how loud the show is.
+               -18 suits a quiet, very natural sound with the most headroom.</p>
+            <p>Once songs are measured, a table under the target shows what each choice would mean for <i>your</i> songs:
+               how many get a plain volume change, how many need the gentle limiter, and how many would land a little quieter
+               rather than be squashed. It also gives the loudest target every song reaches with a plain volume change.
+               Press <b>Use</b> on a row to switch to that target.</p>
 
             <h6 class="fw-semibold">Your sequences stay in sync</h6>
             <p>Songs keep their file names, so sequences and playlists still find them. Each leveled song is checked against the original,

@@ -14,6 +14,7 @@
                     <label for="alTargetPreset" class="form-label fw-semibold mb-1">Target level</label>
                     <div class="input-group mb-1">
                         <select id="alTargetPreset" class="form-select">
+                            <option value="-18">-18 LUFS &middot; quietest, most headroom</option>
                             <option value="-16">-16 LUFS &middot; quieter, more headroom</option>
                             <option value="-14">-14 LUFS &middot; recommended</option>
                             <option value="-12">-12 LUFS &middot; louder</option>
@@ -22,7 +23,27 @@
                         </select>
                         <input id="alTargetCustom" type="number" class="form-control d-none" min="-30" max="-6" step="0.5" aria-label="Custom target in LUFS">
                     </div>
-                    <div class="form-text mb-3">Every song is brought to this loudness. Use FPP's volume to set how loud the show plays overall.</div>
+                    <div class="form-text mb-2">Every song is brought to this loudness. Use FPP's volume to set how loud the show plays overall.</div>
+
+                    <!-- Target advisor: what each target would mean for these songs -->
+                    <div id="alAdvisor" class="mb-3 d-none">
+                        <div class="small fw-semibold mb-1">What each target means for your songs</div>
+                        <div class="table-responsive">
+                            <table class="table table-sm small align-middle mb-1">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">Target</th>
+                                        <th scope="col" class="text-end" title="A plain volume change does it (lossless for MP3s, or FPP playback gain)">Volume only</th>
+                                        <th scope="col" class="text-end" title="Needs 3 dB or less of peak trimming">Gentle limiter</th>
+                                        <th scope="col" class="text-end" title="Would need more trimming; recommended to land a little quieter instead">Lands quieter</th>
+                                        <th scope="col"></th>
+                                    </tr>
+                                </thead>
+                                <tbody id="alAdvisorRows"></tbody>
+                            </table>
+                        </div>
+                        <div id="alAdvisorNote" class="form-text"></div>
+                    </div>
 
                     <label for="alCeiling" class="form-label fw-semibold mb-1">Peak ceiling</label>
                     <select id="alCeiling" class="form-select mb-1">

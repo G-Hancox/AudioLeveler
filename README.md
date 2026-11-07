@@ -11,7 +11,9 @@ It measures each song in FPP's music folder (EBU R128 integrated loudness in LUF
 | **Limiter** | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
 | **Compression** | Also narrows the gap between a song's quiet and loud parts (2:1 above -20 dBFS). Good outdoors or over FM. |
 
-Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
+Target presets are -18, -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
+
+**Target advisor:** once songs are measured, a table under the target shows, for each preset, how many of your show songs get a plain volume change, how many need the gentle limiter and how many would land a little quieter instead of being squashed (Background and Skip songs aren't counted). It also names the loudest target every song reaches with a plain volume change. **Use** switches to that target.
 
 ### Per-song fixes
 

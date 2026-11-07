@@ -416,8 +416,67 @@
         });
     }
 
+    /* ---------------- target advisor ----------------
+       For each target, how the show songs would be fixed (by the same
+       recommendation the worker uses), and the loudest target every one of
+       them can reach with a plain volume change. Background and Skip songs
+       aren't counted: they don't follow the show's target. */
+
+    var ADVISOR_TARGETS = [-18, -16, -14, -12, -10];
+
+    function renderAdvisor() {
+        var box = $id('alAdvisor');
+        var show = files.filter(function (f) {
+            return hasLufs(f) && f.choice !== 'background' && f.choice !== 'skip';
+        });
+        if (show.length < 2 || !options) { box.classList.add('d-none'); return; }
+        box.classList.remove('d-none');
+        var ceiling = options.ceiling;
+        var targets = ADVISOR_TARGETS.slice();
+        if (targets.indexOf(options.target) < 0) { targets.push(options.target); targets.sort(function (a, b) { return a - b; }); }
+        // Raw loudness/peak (a playback gain is part of how the song is played
+        // now, not of the song) and each song's speaker-matching offset.
+        function raw(f) {
+            var g = f.pbGain || 0;
+            return { I: (f.rawLufs !== undefined ? f.rawLufs : f.lufs), TP: (f.peak === null || f.peak === undefined) ? null : f.peak - g };
+        }
+        $id('alAdvisorRows').innerHTML = targets.map(function (t) {
+            var vol = 0, lim = 0, held = 0;
+            show.forEach(function (f) {
+                var r = raw(f);
+                var rec = recommendMode(r.I, r.TP, t + speakerDelta(f), ceiling);
+                if (rec === 'limit') { lim++; }
+                else if (rec === 'volume' && r.TP !== null && r.TP + (t + speakerDelta(f) - r.I) - ceiling > VOLUME_CLOSE_DB) { held++; }
+                else { vol++; }
+            });
+            var current = t === options.target;
+            return '<tr' + (current ? ' class="table-active"' : '') + '>' +
+                '<td class="text-nowrap">' + t + ' LUFS' + (current ? ' <span class="badge text-bg-secondary">current</span>' : '') + '</td>' +
+                '<td class="text-end">' + vol + '</td>' +
+                '<td class="text-end">' + (lim || '–') + '</td>' +
+                '<td class="text-end' + (held ? ' text-warning-emphasis' : '') + '">' + (held || '–') + '</td>' +
+                '<td class="text-end">' + (current ? '' : '<button type="button" class="btn btn-sm btn-link p-0 al-use-target" data-t="' + t + '">Use</button>') + '</td>' +
+                '</tr>';
+        }).join('');
+        // The loudest target every show song reaches with no limiting at all.
+        var limit = Infinity, by = null;
+        show.forEach(function (f) {
+            var r = raw(f);
+            if (r.TP === null) { return; }
+            var t = ceiling - r.TP + r.I - speakerDelta(f);
+            if (t < limit) { limit = t; by = f.name; }
+        });
+        $id('alAdvisorNote').textContent = isFinite(limit)
+            ? 'Up to ' + (Math.floor(limit * 2) / 2).toFixed(1) + ' LUFS, every show song lands right on its target with a plain volume change' +
+              (by ? ' (the first to need help above that is ' + by + ').' : '.') +
+              ' Above it, a song a little short of headroom is left up to 1 dB quieter instead of limited.' +
+              ' Counts use each song\'s recommended fix' + (options.match !== 'lufs' ? ' and speaker matching' : '') + '.'
+            : '';
+    }
+
     function renderRows() {
         renderStats();
+        renderAdvisor();
         renderSortIcons();
         var tb = $id('alRows');
         shown = visibleFiles();
@@ -664,6 +723,21 @@
             saveOptions();
         });
         $id('alTargetCustom').addEventListener('change', saveOptions);
+        $id('alAdvisorRows').addEventListener('click', function (e) {
+            var b = e.target.closest('.al-use-target');
+            if (!b) { return; }
+            var t = b.getAttribute('data-t');
+            var preset = $id('alTargetPreset');
+            if (Array.prototype.some.call(preset.options, function (op) { return op.value === t; })) {
+                preset.value = t;
+                $id('alTargetCustom').classList.add('d-none');
+            } else {
+                preset.value = 'custom';
+                $id('alTargetCustom').value = t;
+                $id('alTargetCustom').classList.remove('d-none');
+            }
+            saveOptions();
+        });
         $id('alCeiling').addEventListener('change', saveOptions);
         $id('alBackup').addEventListener('change', saveOptions);
         $id('alWaitIdle').addEventListener('change', saveOptions);
