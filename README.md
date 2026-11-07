@@ -12,6 +12,16 @@ It measures each song in FPP's music folder (EBU R128 integrated loudness in LUF
 
 Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
 
+## Sound quality
+
+Each song gets the gentlest treatment that does the job:
+
+- **Already close:** a song within about 0.5 dB of the target is left untouched.
+- **Lossless (MP3):** when an MP3 only needs a volume change, the plugin adjusts the `global_gain` stored in every frame, the same technique MP3Gain uses, in 1.505 dB steps. Nothing is decoded or re-encoded, so the result is bit-for-bit the original audio scaled by an exact factor. Tags and the LAME/Xing header, which holds the gapless timing, are copied untouched. Files that can't be edited safely (CRC-protected, free-format or damaged streams) fall back to re-encoding. This is on by default. The song lands within about ¾ dB of the target.
+- **Re-encoded at top quality:** anything that needs the limiter or compression, and other formats. MP3 at 320 kbps with `compression_level 0` (LAME -q 0), AAC at 256 kbps or more, FLAC/WAV losslessly with triangular dither for 16-bit. The limiter oversamples 4x through the SoX resampler when ffmpeg has it.
+
+The status column shows which path each song took.
+
 ## Safe for a running show
 
 - **Timing is kept.** File names, format and sample rate stay the same. Every leveled file is checked against the original, and if its length differs by more than 0.15 s it is thrown away and the original is kept.
@@ -43,7 +53,7 @@ Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a cust
 
 Newer FPP builds include a **Normalize** button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless and covers many shows. It has no limiter, though, so a quiet song can only be raised as far as its peaks allow.
 
-Audio Leveler rewrites the files instead. That lets it use a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, with every peak kept under the ceiling. It also works on FPP releases that don't have Normalize. Use one or the other for a given song. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
+Audio Leveler rewrites the files instead (losslessly for MP3s that only need a volume change). That lets it use a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, with every peak kept under the ceiling. It also works on FPP releases that don't have Normalize. Use one or the other for a given song. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
 
 ## Files
 
@@ -52,6 +62,7 @@ Audio Leveler rewrites the files instead. That lets it use a true-peak limiter o
 | `content.php`, `assets/audioleveler.js` | The Content Setup page |
 | `api.php` | `/api/plugin/AudioLeveler/...` endpoints |
 | `bin/leveler.py` | Background worker that runs ffmpeg |
+| `bin/mp3lossless.py` | Lossless MP3 volume change (frame `global_gain` edit, as MP3Gain does) |
 | `commands/start_job.sh` | FPP command "Audio Leveler: Start Job": the page asks fppd to run it, and it starts the worker. On its own it does nothing. |
 | `callbacks.sh` | Lets fppd load the plugin without a restart, and asks a running job to stop after its current song when fppd stops or unloads the plugin |
 | `about.php` | Help page |

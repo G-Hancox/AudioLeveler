@@ -47,6 +47,7 @@ function AudioLevelerDefaults()
         'mode' => 'limit',   // volume | limit | compress
         'backup' => true,
         'waitIdle' => true,
+        'lossless' => true,  // change MP3 volume losslessly when no limiting is needed
     );
 }
 
@@ -295,6 +296,7 @@ function AudioLevelerFiles()
                     'mode' => $l['mode'],
                     'gain' => $l['gain'],
                     'limited' => !empty($l['limited']),
+                    'method' => isset($l['method']) ? $l['method'] : 'encoded',
                     'at' => $l['at'],
                 );
             } else {
@@ -357,6 +359,7 @@ function AudioLevelerLevel()
         'mode' => $mode,
         'backup' => (bool) $opt['backup'],
         'waitIdle' => (bool) $opt['waitIdle'],
+        'lossless' => (bool) $opt['lossless'],
     ));
 }
 

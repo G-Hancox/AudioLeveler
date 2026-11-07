@@ -30,6 +30,11 @@ import sys
 import time
 import urllib.request
 
+# Our own helper module sits next to this script; add the folder explicitly so
+# it is found however Python is started (isolated mode drops the script dir).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import mp3lossless  # noqa: E402
+
 PLUGIN = "AudioLeveler"
 
 AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".ogg", ".oga", ".wav", ".flac"}
@@ -38,6 +43,10 @@ AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".ogg", ".oga", ".wav", ".flac"}
 # leveled file that differs by more than this is thrown away rather than put
 # in place, because sequences are timed to the audio.
 MAX_LENGTH_DRIFT = 0.15
+
+# A song already within this many dB of the target is left as it is: the
+# difference is inaudible and not worth an encode.
+NEAR_TARGET_DB = 0.5
 
 # Light compression used by the "compress" mode: gentle 2:1 above -20 dBFS
 # with a soft knee, slow enough not to pump on drums.
@@ -179,15 +188,41 @@ def have_encoder(name):
     return re.search(r"\s%s\s" % re.escape(name), ENCODERS) is not None
 
 
+_SOXR = None
+
+
+def have_soxr():
+    """Whether this ffmpeg has the SoX resampler (cleaner than the default)."""
+    global _SOXR
+    if _SOXR is None:
+        r = run(["ffmpeg", "-hide_banner", "-nostdin", "-f", "lavfi", "-i", "anullsrc=r=44100",
+                 "-t", "0.05", "-af", "aresample=88200:resampler=soxr", "-f", "null", "-"], timeout=60)
+        _SOXR = r.returncode == 0
+    return _SOXR
+
+
+def resample(rate):
+    if have_soxr():
+        return "aresample=%d:resampler=soxr:precision=28" % rate
+    return "aresample=%d" % rate
+
+
+def needs_dither(ext, info):
+    """16-bit or 8-bit PCM output gets dither when it's cut down from float."""
+    return ext == ".wav" and not info.get("codec", "").startswith(("pcm_s24", "pcm_s32", "pcm_f"))
+
+
 def codec_args(ext, info):
     """Encoder settings that keep the file's format, sample rate and quality."""
     br = info.get("br") or 0
     if ext == ".mp3":
-        # 192k minimum: re-encoding a 128k file at 128k audibly dulls it.
-        kbps = clamp(br or 320, 192, 320)
-        return ["-c:a", "libmp3lame", "-b:a", "%dk" % kbps, "-id3v2_version", "3"]
+        # When an MP3 has to be re-encoded, do it at MP3's best: 320 kbps with
+        # LAME's most careful (slowest) algorithm, compression_level 0 = lame -q 0.
+        return ["-c:a", "libmp3lame", "-b:a", "320k", "-compression_level", "0",
+                "-id3v2_version", "3"]
     if ext in (".m4a", ".aac"):
-        kbps = clamp(br or 256, 160, 320)
+        # ffmpeg's built-in AAC encoder needs a generous bitrate to stay clean.
+        kbps = clamp(br or 256, 256, 320)
         args = ["-c:a", "aac", "-b:a", "%dk" % kbps]
         if ext == ".aac":
             args += ["-f", "adts"]
@@ -365,7 +400,7 @@ class Worker:
         need_limit = TP is not None and TP + gain > ceiling
         return gain, need_limit
 
-    def build_filter(self, gain, limit, ceiling, sr, mode):
+    def build_filter(self, gain, limit, ceiling, sr, mode, dither=False):
         parts = []
         if mode == "compress":
             parts.append(COMPRESSOR)
@@ -374,9 +409,11 @@ class Worker:
             # Oversample 4x so the limiter catches peaks between samples
             # (true peak), then come back to the file's own sample rate.
             lin = clamp(db_to_lin(ceiling - 0.1), 0.0625, 1.0)
-            parts.append("aresample=%d" % (sr * 4))
+            parts.append(resample(sr * 4))
             parts.append("alimiter=limit=%.4f:attack=5:release=60:level=0:latency=1" % lin)
-            parts.append("aresample=%d" % sr)
+            parts.append(resample(sr))
+        if dither:
+            parts.append("aresample=osf=s16:dither_method=triangular")
         return ",".join(parts)
 
     def level_one(self, name, target, ceiling, mode, keep_backup):
@@ -392,37 +429,72 @@ class Worker:
             return False, "skipped: song is silent or too short to measure"
 
         gain, limit = self.plan_gain(m["I"], m["TP"], target, ceiling, mode)
-        if abs(gain) < 0.1 and not limit and mode != "compress":
-            if not from_backup:
-                return True, "already at %.1f LUFS, left as is" % m["I"]
-
         tmp = os.path.join(self.tmpdir, "leveling" + ext)
-        expected = target if mode != "volume" else m["I"] + gain
         out = None
-        for attempt in (1, 2):
-            af = self.build_filter(gain, limit, ceiling, info["sr"], mode)
-            cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src, "-vn",
-                   "-map", "0:a:0", "-map_metadata", "0", "-af", af,
-                   "-ar", str(info["sr"]), "-ac", str(info["ch"])] + codec_args(ext, info) + [tmp]
-            r = run(cmd)
-            if r.returncode != 0 or not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
-                tail = (r.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
-                if os.path.exists(tmp):
-                    os.remove(tmp)
-                return False, "ffmpeg failed: " + tail[0]
-            # Check the new file before it goes anywhere near the show.
-            out = measure(tmp)
-            miss = None if out["I"] is None else expected - out["I"]
-            # The encoder or limiter can shift loudness a little; one corrective
-            # pass brings it back on target. Volume-only mode can't go up past
-            # its peak headroom, so it only ever corrects downward.
-            if attempt == 2 or miss is None or abs(miss) <= 0.3:
-                break
-            if mode == "volume" and miss > 0:
-                break
-            gain += miss
-            if mode != "volume":
-                limit = m["TP"] is not None and m["TP"] + gain > ceiling
+        method = None
+        note = ""
+
+        # 1. Close enough already: leave the song alone (or, when we're working
+        #    from the backup, put the untouched original back).
+        if mode != "compress" and not limit and abs(gain) < NEAR_TARGET_DB:
+            if not from_backup:
+                return True, "already within %.1f dB of the target (%.1f LUFS), left as is" % (
+                    NEAR_TARGET_DB, m["I"])
+            shutil.copyfile(src, tmp)
+            out, method, gain = dict(m), "original", 0.0
+
+        # 2. MP3 that only needs a volume change: change it losslessly, the way
+        #    MP3Gain does, in 1.5 dB steps. Nothing is re-encoded.
+        if method is None and ext == ".mp3" and mode != "compress" and self.req.get("lossless", True):
+            steps, why = self.lossless_steps(gain, m, target, ceiling, mode)
+            if steps == 0 and not from_backup:
+                # Within half a lossless step (~0.75 dB): not worth any change.
+                return True, "already within 0.8 dB of the target (%.1f LUFS), left as is" % m["I"]
+            if steps is not None:
+                try:
+                    mp3lossless.apply(src, tmp, steps)
+                    out = measure(tmp)
+                    if out["TP"] is not None and out["TP"] > ceiling + 0.3:
+                        raise mp3lossless.NotLossless("peaks came out above the ceiling")
+                    method, gain, limit = ("lossless" if steps else "original"), steps * mp3lossless.STEP_DB, False
+                except mp3lossless.NotLossless as ex:
+                    why = str(ex)
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                    out = None
+            if method is None and why and "limiter" not in why:
+                note = "; re-encoded because " + why
+
+        # 3. Everything else: re-encode at the best quality the format allows.
+        if method is None:
+            method = "encoded"
+            expected = target if mode != "volume" else m["I"] + gain
+            dither = needs_dither(ext, info)
+            for attempt in (1, 2):
+                af = self.build_filter(gain, limit, ceiling, info["sr"], mode, dither)
+                cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src, "-vn",
+                       "-map", "0:a:0", "-map_metadata", "0", "-af", af,
+                       "-ar", str(info["sr"]), "-ac", str(info["ch"])] + codec_args(ext, info) + [tmp]
+                r = run(cmd)
+                if r.returncode != 0 or not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
+                    tail = (r.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
+                    if os.path.exists(tmp):
+                        os.remove(tmp)
+                    return False, "ffmpeg failed: " + tail[0]
+                # Check the new file before it goes anywhere near the show.
+                out = measure(tmp)
+                miss = None if out["I"] is None else expected - out["I"]
+                # The encoder or limiter can shift loudness a little; one corrective
+                # pass brings it back on target. Volume-only mode can't go up past
+                # its peak headroom, so it only ever corrects downward.
+                if attempt == 2 or miss is None or abs(miss) <= 0.3:
+                    break
+                if mode == "volume" and miss > 0:
+                    break
+                gain += miss
+                if mode != "volume":
+                    limit = m["TP"] is not None and m["TP"] + gain > ceiling
+
         if m["len"] and out["len"] and abs(out["len"] - m["len"]) > MAX_LENGTH_DRIFT:
             os.remove(tmp)
             return False, ("not changed: the leveled file came out %.2fs %s, which "
@@ -459,7 +531,7 @@ class Worker:
         sig = file_sig(path)
         self.leveled[name] = dict(sig, target=target, ceiling=ceiling, mode=mode,
                                   gain=round(gain, 2), limited=limit, at=now(),
-                                  backup=os.path.exists(bpath))
+                                  method=method, backup=os.path.exists(bpath))
         write_json(self.leveled_path, self.leveled)
         entry = dict(sig)
         entry.update(probe(path))
@@ -469,13 +541,28 @@ class Worker:
         write_json(self.analysis_path, self.analysis)
 
         before = "%.1f" % before if before is not None else "?"
-        note = ""
-        if mode == "volume" and target - (out["I"] if out["I"] is not None else target) > 0.3:
-            note = " (held back by peaks; try the limiter mode to go louder)"
+        after = out["I"] if out["I"] is not None else target
+        how = {"lossless": "lossless", "original": "original restored", "encoded": "re-encoded"}[method]
+        if mode == "volume" and target - after > 0.3 and method != "original":
+            note = " (held back by peaks; try the limiter mode to go louder)" + note
         elif limit:
-            note = " (limiter caught the peaks)"
-        return True, "%s -> %.1f LUFS, %+.1f dB%s" % (before, out["I"] if out["I"] is not None else target,
-                                                     gain, note)
+            note = " (limiter caught the peaks)" + note
+        return True, "%s -> %.1f LUFS, %+.1f dB, %s%s" % (before, after, gain, how, note)
+
+    def lossless_steps(self, gain, m, target, ceiling, mode):
+        """
+        Whole 1.5 dB steps for a lossless MP3 change, or (None, reason) when a
+        lossless change wouldn't do the job and the song should be re-encoded.
+        """
+        step = mp3lossless.STEP_DB
+        steps = int(round(gain / step))
+        # Never push peaks over the ceiling: that needs the limiter.
+        while steps > 0 and m["TP"] is not None and m["TP"] + steps * step > ceiling:
+            steps -= 1
+        miss = gain - steps * step
+        if mode == "limit" and miss > step / 2:
+            return None, "it needed the limiter to reach the target"
+        return steps, None
 
     def cmd_level(self):
         target = clamp(float(self.req.get("target", -14)), -30.0, -6.0)
@@ -486,8 +573,9 @@ class Worker:
         keep = bool(self.req.get("backup", True))
         files = self.files_requested()
         self.save_job(total=len(files), target=target, ceiling=ceiling, mode=mode)
-        logging.info("Leveling %d file(s) to %.1f LUFS, ceiling %.1f dBTP, mode %s, backups %s",
-                     len(files), target, ceiling, mode, "on" if keep else "off")
+        logging.info("Leveling %d file(s) to %.1f LUFS, ceiling %.1f dBTP, mode %s, backups %s, lossless MP3 %s",
+                     len(files), target, ceiling, mode, "on" if keep else "off",
+                     "on" if self.req.get("lossless", True) else "off")
         for i, name in enumerate(files):
             if self.cancelled():
                 break

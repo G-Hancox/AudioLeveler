@@ -79,7 +79,8 @@
             ceiling: parseFloat($id('alCeiling').value),
             mode: mode ? mode.value : 'limit',
             backup: $id('alBackup').checked,
-            waitIdle: $id('alWaitIdle').checked
+            waitIdle: $id('alWaitIdle').checked,
+            lossless: $id('alLossless').checked
         };
     }
 
@@ -103,6 +104,7 @@
         if (radio) { radio.checked = true; }
         $id('alBackup').checked = !!o.backup;
         $id('alWaitIdle').checked = !!o.waitIdle;
+        $id('alLossless').checked = o.lossless !== false;
     }
 
     function saveOptions() {
@@ -138,7 +140,9 @@
         if (f.leveled) {
             var l = f.leveled;
             return '<span class="badge text-bg-success">Leveled</span> <span class="small text-body-secondary">' +
-                esc(l.target + ' LUFS, ' + (MODE_NAMES[l.mode] || l.mode)) + '</span>';
+                esc(l.target + ' LUFS, ' + (l.method === 'lossless' ? 'lossless'
+                    : l.method === 'original' ? 'original kept'
+                    : (MODE_NAMES[l.mode] || l.mode) + ', re-encoded')) + '</span>';
         }
         if (f.changedSinceLeveled) {
             return '<span class="badge text-bg-warning">Replaced since leveling</span>';
@@ -440,6 +444,7 @@
         });
         $id('alBackup').addEventListener('change', saveOptions);
         $id('alWaitIdle').addEventListener('change', saveOptions);
+        $id('alLossless').addEventListener('change', saveOptions);
 
         $id('alRows').addEventListener('change', function (e) {
             if (e.target.classList.contains('al-sel')) {
@@ -528,7 +533,7 @@
         });
 
         api('GET', 'options').then(function (j) { showOptions(j.options); })
-            .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'limit', backup: true, waitIdle: true }); })
+            .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'limit', backup: true, waitIdle: true, lossless: true }); })
             .then(loadFiles)
             .then(poll);
     }

@@ -55,6 +55,14 @@
                         </label>
                     </div>
 
+                    <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" role="switch" id="alLossless">
+                        <label class="form-check-label" for="alLossless">Lossless volume change for MP3s when possible</label>
+                    </div>
+                    <div class="form-text mb-3">Like MP3Gain: changes an MP3's volume in 1.5 dB steps without re-encoding, so there's no quality loss at all.
+                        Used whenever a song only needs turning up or down. Songs that need the limiter or compression, and other formats,
+                        are re-encoded at top quality (MP3 at 320 kbps).</div>
+
                     <div class="form-check form-switch mb-2">
                         <input class="form-check-input" type="checkbox" role="switch" id="alBackup">
                         <label class="form-check-label" for="alBackup">Keep the original of each song so it can be restored</label>

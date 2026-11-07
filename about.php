@@ -54,13 +54,26 @@
 
             <h6 class="fw-semibold">Audio Leveler or FPP's Normalize?</h6>
             <p>Newer FPP versions have a <b>Normalize</b> button in File Manager that adjusts each song's volume during playback without changing the file.
-               That's lossless and fine for many shows. Audio Leveler rewrites the files instead, which lets it use a peak limiter or light compression,
+               That's lossless and fine for many shows. Audio Leveler rewrites the files instead (losslessly for MP3s that only need a volume change), which lets it use a peak limiter or light compression,
                so quiet songs reach the full target with every peak kept under the ceiling. Use one or the other for a given song;
                FPP ignores its own Normalize setting for a file that has been changed since it was normalized, so they won't stack.</p>
 
+            <h6 class="fw-semibold">Sound quality</h6>
+            <p>Each song gets the gentlest treatment that does the job:</p>
+            <ul>
+                <li><b>Already close:</b> a song within about half a decibel of the target is left untouched.</li>
+                <li><b>Lossless (MP3s):</b> when an MP3 only needs turning up or down, its volume is changed the way MP3Gain does it,
+                    by adjusting the gain stored in each frame, in 1.5 dB steps. Nothing is re-encoded, so there's no quality loss at all,
+                    and the song ends up within about ¾ dB of the target. Turn this off under <b>Lossless volume change for MP3s</b>
+                    if you'd rather every song hit the target exactly.</li>
+                <li><b>Re-encoded at top quality:</b> songs that need the limiter or compression, and formats other than MP3, are re-encoded:
+                    MP3 at 320 kbps with LAME's highest-quality setting, M4A/AAC at 256 kbps or more, FLAC and WAV losslessly
+                    (16-bit WAV with dither). The limiter oversamples 4x with a high-quality resampler.</li>
+            </ul>
+            <p>The status column shows which one each song got: <i>lossless</i>, <i>re-encoded</i> or <i>original kept</i>.</p>
+
             <h6 class="fw-semibold">Supported files</h6>
-            <p>MP3, M4A/AAC, OGG, WAV and FLAC in FPP's music folder. Songs are written back in their own format and sample rate.
-               MP3s are written at no less than 192 kbps, so re-encoding doesn't dull them.</p>
+            <p>MP3, M4A/AAC, OGG, WAV and FLAC in FPP's music folder. Songs are written back in their own format and sample rate.</p>
 
             <h6 class="fw-semibold">Log</h6>
             <p>Everything the plugin does is written to <code>logs/plugin-AudioLeveler.log</code>, which you can view under <b>Help &rarr; FPP Logs</b>.</p>
