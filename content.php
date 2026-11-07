@@ -32,6 +32,15 @@
                     </select>
                     <div class="form-text mb-3">The loudest peak allowed, so nothing clips or distorts.</div>
 
+                    <label for="alMatch" class="form-label fw-semibold mb-1">Match songs by</label>
+                    <select id="alMatch" class="form-select mb-1">
+                        <option value="speakers">How they sound on outdoor speakers &middot; recommended</option>
+                        <option value="lufs">Plain loudness (LUFS)</option>
+                    </select>
+                    <div class="form-text mb-3">Outdoor speakers and FM transmitters barely play deep bass, so a bass-heavy song can measure on target
+                        yet sound quieter outside. Speaker matching (the same method as FPP's Normalize) nudges each song's target by up to 4 dB
+                        to make up for it. Songs measured before you turn this on need measuring again.</div>
+
                     <label for="alBgOffset" class="form-label fw-semibold mb-1">Background level</label>
                     <select id="alBgOffset" class="form-select mb-1">
                         <option value="6">6 dB under the show</option>

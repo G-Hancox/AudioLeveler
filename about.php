@@ -44,6 +44,13 @@
                 <li><b>Compression</b>: also narrows the gap between quiet and loud parts of a song (2:1 above -20 dB). Useful outdoors or over an FM transmitter, where soft intros get lost.</li>
             </ul>
 
+            <h6 class="fw-semibold">Matching by outdoor speakers</h6>
+            <p>Outdoor speakers and FM transmitters barely reproduce deep bass, so a bass-heavy song can measure on target yet sound quieter
+               outside, and a thin one louder. With <b>Match songs by: How they sound on outdoor speakers</b> (the default), each song is
+               also measured with everything under 120 Hz removed, and its target is nudged by up to 4 dB to make up for it. It's the same
+               method and the same numbers as FPP's own Normalize. The Fix column notes the nudge, for example <i>Speaker match: aims 1.8 dB quieter</i>.
+               Songs measured before this was on need measuring again; <b>Measure songs</b> does that for them.</p>
+
             <h6 class="fw-semibold">Choosing a target</h6>
             <p>LUFS measures how loud a song sounds, not just its peaks. -14 LUFS is what streaming services use and leaves room for punchy peaks.
                Go to -12 or -10 for a louder signal into an FM transmitter, or -16 for a quieter, more natural sound.

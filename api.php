@@ -53,6 +53,7 @@ function AudioLevelerDefaults()
         'lossless' => true,  // change MP3 volume losslessly when no limiting is needed
         'autoLevel' => false, // level new and replaced songs automatically
         'playbackGain' => true, // use FPP's playback gain for volume-only fixes, where FPP has it
+        'match' => 'speakers', // speakers (ignore deep bass, as FPP's Normalize) | lufs
     );
 }
 
@@ -319,6 +320,8 @@ function AudioLevelerFiles()
             $row['peak'] = isset($a['TP']) ? $a['TP'] : null;
             $row['lra'] = isset($a['LRA']) ? $a['LRA'] : null;
             $row['length'] = isset($a['len']) ? $a['len'] : null;
+            $row['spk'] = isset($a['spk']) ? $a['spk'] : null;
+            $row['hasSpk'] = array_key_exists('spk', $a);
             $row['measured'] = true;
         } else {
             $row['measured'] = false;
@@ -388,6 +391,7 @@ function AudioLevelerAnalyze()
     return AudioLevelerStart('analyze', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
         'force' => !empty($body['force']),
+        'match' => AudioLevelerOptions()['match'] === 'lufs' ? 'lufs' : 'speakers',
     ));
 }
 
@@ -409,6 +413,7 @@ function AudioLevelerLevel()
         'lossless' => (bool) $opt['lossless'],
         'bgOffset' => max(3, min(30, floatval($opt['bgOffset']))),
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
+        'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
     ));
 }
 
@@ -421,6 +426,7 @@ function AudioLevelerRestore()
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
         'waitIdle' => (bool) $opt['waitIdle'],
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
+        'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
     ));
 }
 
@@ -473,6 +479,9 @@ function AudioLevelerSetOptions()
         if ($k === 'mode' && !in_array($val, array('auto', 'volume', 'limit', 'compress'))) {
             continue;
         }
+        if ($k === 'match' && !in_array($val, array('speakers', 'lufs'), true)) {
+            continue;
+        }
         if ($k === 'target') {
             $val = max(-30, min(-6, floatval($val)));
         }
@@ -510,6 +519,7 @@ function AudioLevelerWriteAutoSettings()
         'backup' => (bool) $opt['backup'],
         'since' => intval(ReadSettingFromFile('AudioLeveler_autoSince', AUDIOLEVELER_PLUGIN)),
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
+        'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
         'music' => AudioLevelerMusicDir(),
         'log' => AudioLevelerLogFile(),
     );

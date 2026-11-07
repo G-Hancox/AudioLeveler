@@ -86,6 +86,21 @@
         return over <= GENTLE_LIMIT_DB ? 'limit' : 'volume';
     }
 
+    // Speaker matching (as FPP's Normalize does it): each song's own target
+    // moves by how loud it is with the deep bass removed, at most 4 dB.
+    // Mirrors speaker_delta() in bin/leveler.py.
+    var SPEAKER_OFFSET_DB = 3.0, SPEAKER_MAX_DEV_DB = 4.0;
+    function speakerDelta(f) {
+        if (!options || options.match === 'lufs' || f.spk === null || f.spk === undefined) { return 0; }
+        var I = f.rawLufs !== undefined ? f.rawLufs : f.lufs;   // both raw: playback gain cancels out
+        return Math.max(-SPEAKER_MAX_DEV_DB, Math.min(SPEAKER_MAX_DEV_DB, I - f.spk - SPEAKER_OFFSET_DB));
+    }
+    function songTarget(f) { return options.target + speakerDelta(f); }
+    // Where this song is meant to end up: its target, under the show if it's Background.
+    function intendedTarget(f) {
+        return songTarget(f) - (f.choice === 'background' ? (options.bgOffset || 10) : 0);
+    }
+
     function dB(v) { return (v > 0 ? '+' : (v < 0 ? '−' : '±')) + Math.abs(v).toFixed(1) + ' dB'; }
 
     // What leveling would do to this song now: {text, note, rec}
@@ -95,7 +110,7 @@
         // 'auto' choice means the same thing.
         var choice = (!f.choice || f.choice === 'auto') ? 'default' : f.choice;
         var mode = choice === 'default' ? 'auto' : choice;
-        var target = options.target, ceiling = options.ceiling;
+        var target = songTarget(f), ceiling = options.ceiling;
         var I = f.lufs, TP = (f.peak === null || f.peak === undefined) ? null : f.peak;
         // On an FPP with playback gain, volume-only fixes go there: exact and
         // lossless for every format, no lossless-step rounding.
@@ -110,6 +125,14 @@
         }
         if (choice === 'skip') { return { text: 'Skipped', note: '' }; }
         if (choice === 'background') { mode = 'volume'; target = target - (options.bgOffset || 10); }
+        var delta = speakerDelta(f);
+        if (Math.abs(delta) >= 0.5) {
+            note.unshift('Speaker match: aims ' + Math.abs(delta).toFixed(1) + ' dB ' + (delta > 0 ? 'louder' : 'quieter') +
+                ' (' + (delta > 0 ? 'bass-heavy' : 'carries well') + ' on outdoor speakers)');
+        }
+        if (options.match !== 'lufs' && hasLufs(f) && !f.hasSpk) {
+            note.push('Measure again for speaker matching');
+        }
         var rec = mode === 'auto';
         if (rec) {
             mode = recommendMode(I, TP, target, ceiling);
@@ -192,6 +215,7 @@
             ceiling: parseFloat($id('alCeiling').value),
             mode: 'auto',
             bgOffset: parseFloat($id('alBgOffset').value) || 10,
+            match: $id('alMatch').value,
             backup: $id('alBackup').checked,
             waitIdle: $id('alWaitIdle').checked,
             lossless: $id('alLossless').checked,
@@ -220,6 +244,7 @@
         $id('alWaitIdle').checked = !!o.waitIdle;
         $id('alLossless').checked = o.lossless !== false;
         $id('alAutoLevel').checked = !!o.autoLevel;
+        $id('alMatch').value = o.match === 'lufs' ? 'lufs' : 'speakers';
         $id('alPlaybackGain').checked = o.playbackGain !== false;
         var bg = String(Number(o.bgOffset || 10));
         var bs = $id('alBgOffset');
@@ -242,7 +267,7 @@
 
     function lufsClass(f) {
         if (!f.measured || f.lufs === null || f.lufs === undefined) { return ''; }
-        var d = Math.abs(f.lufs - (options ? options.target : -14));
+        var d = Math.abs(f.lufs - (options ? intendedTarget(f) : -14));
         if (d <= 1) { return 'text-success'; }
         if (d <= 4) { return 'text-warning-emphasis'; }
         return 'text-danger';
@@ -284,7 +309,9 @@
 
     function hasLufs(f) { return f.measured && f.lufs !== null && f.lufs !== undefined; }
     function clips(f) { return f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0; }
-    function offTarget(f) { return hasLufs(f) && !!options && Math.abs(f.lufs - options.target) > 1; }
+    function offTarget(f) {
+        return hasLufs(f) && !!options && f.choice !== 'skip' && Math.abs(f.lufs - intendedTarget(f)) > 1;
+    }
 
     function stat(value, label, cls) {
         // Greyed out while a job is running: the totals are mid-update.
@@ -301,13 +328,17 @@
             return;
         }
         var measured = files.filter(hasLufs);
+        // Spread of the show songs around where each is meant to be: Background
+        // and Skip songs, and speaker-matching offsets, are deliberate.
+        var show = measured.filter(function (f) { return f.choice !== 'background' && f.choice !== 'skip'; });
+        var dev = show.map(function (f) { return f.lufs - speakerDelta(f); });
         var spread = '&ndash;', spreadCls = '', spreadLbl = 'loudness spread';
-        if (measured.length > 1) {
-            var lo = Math.min.apply(null, measured.map(function (f) { return f.lufs; }));
-            var hi = Math.max.apply(null, measured.map(function (f) { return f.lufs; }));
+        if (dev.length > 1) {
+            var lo = Math.min.apply(null, dev);
+            var hi = Math.max.apply(null, dev);
             spread = (hi - lo).toFixed(1) + ' <small class="fw-normal">dB</small>';
             spreadCls = hi - lo <= 2 ? 'text-success' : (hi - lo <= 6 ? 'text-warning-emphasis' : 'text-danger');
-            spreadLbl = 'spread, ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + ' LUFS';
+            spreadLbl = 'spread of show songs' + (options.match === 'lufs' ? ', ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + ' LUFS' : ', speaker matched');
         }
         var clipN = measured.filter(clips).length;
         var offN = measured.filter(offTarget).length;
@@ -324,7 +355,7 @@
             stat(files.length, notM ? notM + ' not measured yet' : 'songs, all measured') +
             stat(spread, esc(spreadLbl), spreadCls) +
             stat(clipN, 'clipping', clipN ? 'text-danger' : 'text-success') +
-            stat(offN, 'more than 1 dB off ' + options.target + ' LUFS', offN ? 'text-warning-emphasis' : 'text-success');
+            stat(offN, 'more than 1 dB off their target', offN ? 'text-warning-emphasis' : 'text-success');
     }
 
     // Meter range in LUFS: quiet end to loud end.
@@ -333,11 +364,11 @@
     function meterHtml(f) {
         if (!hasLufs(f)) { return ''; }
         var pos = function (v) { return Math.max(0, Math.min(100, 100 * (v - METER_LO) / (METER_HI - METER_LO))); };
-        var d = Math.abs(f.lufs - options.target);
+        var d = Math.abs(f.lufs - intendedTarget(f));
         var bg = d <= 1 ? 'bg-success' : (d <= 4 ? 'bg-warning' : 'bg-danger');
         return '<div class="al-meter" aria-hidden="true">' +
             '<div class="al-meter-fill ' + bg + '" style="width:' + pos(f.lufs).toFixed(1) + '%"></div>' +
-            '<div class="al-meter-target" style="left:' + pos(options.target).toFixed(1) + '%"></div></div>';
+            '<div class="al-meter-target" style="left:' + pos(intendedTarget(f)).toFixed(1) + '%"></div></div>';
     }
 
     // Sort songs by title, not raw file name: skip a leading track number
@@ -644,6 +675,7 @@
             if (this.checked) { setTimeout(autoCheck, 800); }
         });
         $id('alBgOffset').addEventListener('change', saveOptions);
+        $id('alMatch').addEventListener('change', saveOptions);
 
         $id('alRows').addEventListener('change', function (e) {
             if (e.target.classList.contains('al-sel')) {
@@ -756,7 +788,7 @@
         });
 
         api('GET', 'options').then(function (j) { showOptions(j.options); })
-            .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'auto', backup: true, waitIdle: true, lossless: true, bgOffset: 10 }); })
+            .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'auto', backup: true, waitIdle: true, lossless: true, bgOffset: 10, match: 'speakers' }); })
             .then(loadFiles)
             .then(poll)
             .then(autoCheck);

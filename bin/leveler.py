@@ -224,13 +224,68 @@ def decoded_length(stderr):
     return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
 
 
-def measure(path, prefilter=None):
-    """EBU R128 integrated loudness + true peak via ffmpeg's loudnorm analyser."""
+# Speaker matching (as FPP's Normalize does it): outdoor speakers and FM
+# barely reproduce deep bass, so a bass-heavy song can read "on target" yet
+# sound quieter outside. Its "speaker level" is the median short-term loudness
+# with everything under 120 Hz removed, skipping the first 3 s and near
+# silence. A song is then aimed SPEAKER_OFFSET_DB under that, but never more
+# than SPEAKER_MAX_DEV_DB from where plain LUFS would put it.
+SPEAKER_HIGHPASS = "highpass=f=120,highpass=f=120"
+SPEAKER_OFFSET_DB = 3.0
+SPEAKER_MAX_DEV_DB = 4.0
+_SPK_RE = re.compile(r"lavfi\.r128\.S=(-?[\d.]+)")
+
+
+def speaker_level(stdout):
+    vals = []
+    for i, v in enumerate(_SPK_RE.findall(stdout or "")):
+        if i < 30:
+            continue  # first 3 s: the 3 s window isn't full yet
+        f = float(v)
+        if f > -50:
+            vals.append(f)
+    if len(vals) < 50:
+        return None  # under ~5 s of sound: plain LUFS is used instead
+    vals.sort()
+    n = len(vals)
+    return round(vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2, 2)
+
+
+def speaker_delta(m):
+    """How far speaker matching moves this song's target (0 without a speaker level)."""
+    if not m or m.get("spk") is None or m.get("I") is None:
+        return 0.0
+    return clamp(m["I"] - m["spk"] - SPEAKER_OFFSET_DB, -SPEAKER_MAX_DEV_DB, SPEAKER_MAX_DEV_DB)
+
+
+def spk_note(delta):
+    return " (speaker match %+.1f dB)" % delta if abs(delta) >= 0.05 else ""
+
+
+_FRAMELOG_OK = True
+
+
+def measure(path, prefilter=None, speakers=False):
+    """
+    EBU R128 integrated loudness + true peak via ffmpeg's loudnorm analyser,
+    and, with speakers=True, the speaker level from the same decode pass.
+    """
+    global _FRAMELOG_OK
     af = "loudnorm=I=-14:TP=-1:LRA=11:print_format=json"
     if prefilter:
         af = prefilter + "," + af
-    r = run(["ffmpeg", "-hide_banner", "-nostdin", "-stats", "-i", path, "-vn",
-             "-map", "0:a:0", "-af", af, "-f", "null", "-"])
+    if speakers and not prefilter:
+        eb = "ebur128=metadata=1" + (":framelog=verbose" if _FRAMELOG_OK else "")
+        graph = ("[0:a:0]asplit=2[m][s];[m]%s[mo];[s]%s,%s,"
+                 "ametadata=mode=print:key=lavfi.r128.S:file=-,anullsink" % (af, SPEAKER_HIGHPASS, eb))
+        r = run(["ffmpeg", "-hide_banner", "-nostdin", "-stats", "-i", path, "-vn",
+                 "-filter_complex", graph, "-map", "[mo]", "-f", "null", "-"])
+        if r.returncode != 0 and _FRAMELOG_OK and "framelog" in (r.stderr or ""):
+            _FRAMELOG_OK = False
+            return measure(path, prefilter, speakers)
+    else:
+        r = run(["ffmpeg", "-hide_banner", "-nostdin", "-stats", "-i", path, "-vn",
+                 "-map", "0:a:0", "-af", af, "-f", "null", "-"])
     if r.returncode != 0:
         raise RuntimeError("ffmpeg could not decode this file")
     err = r.stderr
@@ -247,12 +302,15 @@ def measure(path, prefilter=None):
             return None
         return None if math.isinf(v) or math.isnan(v) else round(v, 2)
 
-    return {
+    out = {
         "I": num("input_i"),
         "TP": num("input_tp"),
         "LRA": num("input_lra"),
         "len": decoded_length(err),
     }
+    if speakers and not prefilter:
+        out["spk"] = speaker_level(r.stdout)
+    return out
 
 
 ENCODERS = None
@@ -516,23 +574,30 @@ class Worker:
             return False
         self.update_gains(change)
 
+    def speakers(self):
+        return self.req.get("match") == "speakers"
+
+    def measurement_ok(self, c):
+        """A saved measurement has what's needed (the speaker level, when matching by speakers)."""
+        return bool(c) and c.get("I") is not None and c.get("len") and (not self.speakers() or "spk" in c)
+
     def saved_measurement(self, name, src, from_backup):
         """The Measure step's numbers for the song as it is now, if still valid."""
         if from_backup:
             return None
         c = self.analysis.get(name)
-        if c and same_sig(c, file_sig(src)) and c.get("I") is not None and c.get("len"):
-            return {k: c.get(k) for k in ("I", "TP", "LRA", "len")}
+        if c and same_sig(c, file_sig(src)) and self.measurement_ok(c):
+            return {k: c.get(k) for k in ("I", "TP", "LRA", "len", "spk")}
         return None
 
     def analyze_one(self, name, force=False):
         path = os.path.join(self.music, name)
         sig = file_sig(path)
         cached = self.analysis.get(name)
-        if not force and cached and same_sig(cached, sig) and cached.get("I") is not None:
+        if not force and cached and same_sig(cached, sig) and self.measurement_ok(cached):
             return cached
         info = probe(path)
-        m = measure(path)
+        m = measure(path, speakers=self.speakers())
         entry = dict(sig)
         entry.update(info)
         entry.update(m)
@@ -598,20 +663,20 @@ class Worker:
         # Reuse the Measure step's numbers when they belong to this exact
         # file, so songs that are already fine are passed over instantly.
         saved = self.saved_measurement(name, src, from_backup)
+        base = saved or measure(src, speakers=self.speakers())
+        if base["I"] is None:
+            return False, "skipped: song is silent or too short to measure"
+        # Matching by speakers moves this song's own target (bass-heavy songs
+        # up, thin ones down, at most 4 dB); everything below aims for it.
+        delta = speaker_delta(base) if self.speakers() else 0.0
+        target = target + delta
         if mode == "auto":
-            m = saved or measure(src)
-            if m["I"] is None:
-                return False, "skipped: song is silent or too short to measure"
-            mode = recommend(m["I"], m["TP"], target, ceiling)
+            mode = recommend(base["I"], base["TP"], target, ceiling)
             if mode == "none":
                 mode = "volume"  # within half a dB: the near-target rule below leaves it be
-        else:
-            m = saved
         pre = COMPRESSOR if mode == "compress" else None
-        unfiltered = m
-        if m is None or pre:
-            m = measure(src, pre)
-        before = m["I"] if not pre else (unfiltered or measure(src))["I"]
+        m = measure(src, pre) if pre else base
+        before = base["I"]
         if m["I"] is None:
             return False, "skipped: song is silent or too short to measure"
 
@@ -655,8 +720,8 @@ class Worker:
             write_json(self.analysis_path, self.analysis)
             after = m["I"] + gain
             held = m["TP"] is not None and m["TP"] + (target - m["I"]) > ceiling + 0.05
-            return True, "%.1f -> %.1f LUFS, %+.1f dB, playback gain (file untouched)%s" % (
-                m["I"], after, gain,
+            return True, "%.1f -> %.1f LUFS, %+.1f dB, playback gain (file untouched)%s%s" % (
+                m["I"], after, gain, spk_note(delta),
                 " (held back by peaks, ends %.1f dB under the target)" % (target - after) if held and target - after > 0.3 else "")
 
         # 2b. MP3 that only needs a volume change: change it losslessly, the way
@@ -768,7 +833,7 @@ class Worker:
                 target - after) + note
         elif limit:
             note = " (limiter caught the peaks)" + note
-        return True, "%s -> %.1f LUFS, %+.1f dB, %s%s" % (before, after, gain, how, note)
+        return True, "%s -> %.1f LUFS, %+.1f dB, %s%s%s" % (before, after, gain, how, note, spk_note(delta))
 
     def lossless_steps(self, gain, m, target, ceiling, mode):
         """
@@ -832,21 +897,26 @@ class Worker:
                 fine_db = NEAR_TARGET_DB
                 if name.lower().endswith(".mp3") and self.req.get("lossless", True):
                     fine_db = mp3lossless.STEP_DB / 2 + 0.03
+                fine_target = song_target
                 if cur:
+                    if self.speakers():
+                        fine_target = song_target + speaker_delta(cur)
                     g = self.current_gain(name, path)
                     cur = dict(cur, I=cur["I"] + g, TP=None if cur["TP"] is None else cur["TP"] + g)
                     if g:
                         fine_db = NEAR_TARGET_DB
-                if (cur and abs(cur["I"] - song_target) < fine_db
+                if (cur and abs(cur["I"] - fine_target) < fine_db
                         and (cur["TP"] is None or cur["TP"] <= ceiling + PEAK_TOLERANCE_DB)):
-                    self.result(name, True, "fine as is (%.1f LUFS), left alone" % cur["I"])
+                    self.result(name, True, "fine as is (%.1f LUFS%s), left alone" % (
+                        cur["I"], ", speaker matched" if fine_target != song_target else ""))
                     self.save_job(done=i + 1)
                     continue
             # Already leveled with exactly these settings (say, before a job
             # was cancelled): nothing to redo, so carry on where it stopped.
             rec = self.leveled.get(name)
             if (rec and os.path.exists(path) and same_sig(rec, file_sig(path))
-                    and rec.get("asked") == song_mode and rec.get("target") == song_target
+                    and rec.get("asked") == song_mode and rec.get("askedTarget", rec.get("target")) == song_target
+                    and rec.get("match", "lufs") == self.req.get("match", "lufs")
                     and rec.get("ceiling") == ceiling
                     and rec.get("losslessOpt", True) == bool(self.req.get("lossless", True))):
                 self.result(name, True, "already leveled with these settings")
@@ -859,6 +929,8 @@ class Worker:
                 if ok and name in self.leveled and self.leveled[name].get("at") and (
                         same_sig(self.leveled[name], file_sig(path))):
                     self.leveled[name]["asked"] = song_mode
+                    self.leveled[name]["askedTarget"] = song_target
+                    self.leveled[name]["match"] = self.req.get("match", "lufs")
                     self.leveled[name]["losslessOpt"] = bool(self.req.get("lossless", True))
                     write_json(self.leveled_path, self.leveled)
             except Cancelled:
