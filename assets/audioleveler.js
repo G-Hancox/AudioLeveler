@@ -8,6 +8,7 @@
     var selected = {};
     var pollTimer = null;
     var lastJobState = null;
+    var pgSupported = false;   // this FPP applies playback gain (File Manager > Normalize exists)
     var shown = [];          // songs currently listed, after filter/search/sort
     var filter = 'all';
     var search = '';
@@ -96,7 +97,10 @@
         var mode = choice === 'default' ? 'auto' : choice;
         var target = options.target, ceiling = options.ceiling;
         var I = f.lufs, TP = (f.peak === null || f.peak === undefined) ? null : f.peak;
-        var mp3Lossless = /\.mp3$/i.test(f.name) && options.lossless !== false;
+        // On an FPP with playback gain, volume-only fixes go there: exact and
+        // lossless for every format, no lossless-step rounding.
+        var playback = pgSupported && options.playbackGain !== false;
+        var mp3Lossless = !playback && /\.mp3$/i.test(f.name) && options.lossless !== false;
         var note = [];
         if (f.lra !== null && f.lra !== undefined && f.lra > WIDE_DYNAMICS_LU && mode !== 'compress') {
             note.push('Wide dynamics (' + f.lra.toFixed(0) + ' LU); compression is an option if quiet parts get lost');
@@ -125,6 +129,9 @@
             }
             if (trim <= PEAK_TOLERANCE_DB) {
                 text = dB(gain) + (mp3Lossless ? ' · lossless' : ' · re-encode');
+                // (The worker treats a limiter fix that needs no limiting as a
+                // plain volume change, so it's a playback gain where available.)
+                if (playback) { text = dB(gain) + ' · playback gain'; }
             } else {
                 text = dB(gain) + ' · limiter trims ' + trim.toFixed(1) + ' dB · re-encode';
             }
@@ -146,7 +153,7 @@
             if (lossless && Math.abs(gain) < 0.01) {
                 text = 'Fine as is';
             } else {
-                text = dB(gain) + (lossless ? ' · lossless' : ' · re-encode');
+                text = dB(gain) + (playback ? ' · playback gain' : lossless ? ' · lossless' : ' · re-encode');
             }
             var lands = I + gain;
             if (lands < target - 0.8) {
@@ -188,7 +195,8 @@
             backup: $id('alBackup').checked,
             waitIdle: $id('alWaitIdle').checked,
             lossless: $id('alLossless').checked,
-            autoLevel: $id('alAutoLevel').checked
+            autoLevel: $id('alAutoLevel').checked,
+            playbackGain: $id('alPlaybackGain').checked
         };
     }
 
@@ -212,6 +220,7 @@
         $id('alWaitIdle').checked = !!o.waitIdle;
         $id('alLossless').checked = o.lossless !== false;
         $id('alAutoLevel').checked = !!o.autoLevel;
+        $id('alPlaybackGain').checked = o.playbackGain !== false;
         var bg = String(Number(o.bgOffset || 10));
         var bs = $id('alBgOffset');
         if (!Array.prototype.some.call(bs.options, function (op) { return op.value === bg; })) {
@@ -252,10 +261,15 @@
             return '<span class="badge text-bg-primary"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
                 esc(WORKING_NAMES[workingCmd] || 'Working') + '…</span>';
         }
+        if (f.pbGain !== undefined && f.pbSource === 'fpp') {
+            return '<span class="badge text-bg-info">FPP Normalize</span> <span class="small text-body-secondary">' +
+                esc(dB(f.pbGain) + ' at playback') + '</span>';
+        }
         if (f.leveled) {
             var l = f.leveled;
             return '<span class="badge text-bg-success">Leveled</span> <span class="small text-body-secondary">' +
-                esc(l.target + ' LUFS, ' + (l.method === 'lossless' ? 'lossless'
+                esc(l.target + ' LUFS, ' + (l.method === 'playback' ? 'playback gain ' + dB(f.pbGain || l.gain)
+                    : l.method === 'lossless' ? 'lossless'
                     : l.method === 'original' ? 'original kept'
                     : (MODE_NAMES[l.mode] || l.mode) + ', re-encoded')) + '</span>';
         }
@@ -384,7 +398,7 @@
             tb.innerHTML = shown.map(function (f, i) {
                 var lufs = hasLufs(f) ? f.lufs.toFixed(1) : '&ndash;';
                 var peak = f.measured && f.peak !== null && f.peak !== undefined ? f.peak.toFixed(1) : '&ndash;';
-                var restore = f.backup
+                var restore = f.canRestore
                     ? '<button type="button" class="buttons btn btn-sm btn-outline-secondary al-restore" data-i="' + i + '" title="Put the original back">Restore</button>'
                     : '';
                 return '<tr' + (selected[f.name] ? ' class="table-active"' : '') + '>' +
@@ -419,7 +433,7 @@
         $id('alMeasure').disabled = b || !files.length;
         $id('alLevelAll').disabled = b || !files.length;
         $id('alLevelSel').disabled = b || !sel.length;
-        var selWithBackup = files.filter(function (f) { return selected[f.name] && f.backup; }).length;
+        var selWithBackup = files.filter(function (f) { return selected[f.name] && f.canRestore; }).length;
         $id('alRestoreSel').disabled = b || !selWithBackup;
         $id('alSetFix').disabled = !sel.length;
         $id('alSelText').textContent = sel.length
@@ -462,6 +476,19 @@
     function loadFiles() {
         return api('GET', 'files').then(function (j) {
             files = j.files || [];
+            pgSupported = !!j.playbackGainSupported;
+            $id('alPlaybackGainRow').classList.toggle('d-none', !pgSupported);
+            // Show what each song will actually sound like: its own loudness
+            // plus any playback gain fppd applies to it.
+            files.forEach(function (f) {
+                if (f.pbGain !== undefined && f.measured && f.lufs !== null && f.lufs !== undefined) {
+                    f.rawLufs = f.lufs;
+                    f.lufs = f.lufs + f.pbGain;
+                    if (f.peak !== null && f.peak !== undefined) { f.peak = f.peak + f.pbGain; }
+                }
+                // Something to undo: a backed-up original, or a playback gain we set.
+                f.canRestore = !!f.backup || f.pbSource === 'plugin';
+            });
             var keep = {};
             files.forEach(function (f) { if (selected[f.name]) { keep[f.name] = true; } });
             selected = keep;
@@ -610,6 +637,7 @@
         $id('alBackup').addEventListener('change', saveOptions);
         $id('alWaitIdle').addEventListener('change', saveOptions);
         $id('alLossless').addEventListener('change', saveOptions);
+        $id('alPlaybackGain').addEventListener('change', saveOptions);
         $id('alAutoLevel').addEventListener('change', function () {
             saveOptions();
             // Switched on: look for new songs straight away.
@@ -703,7 +731,7 @@
             start('level', o);
         });
         $id('alRestoreSel').addEventListener('click', function () {
-            var names = files.filter(function (f) { return selected[f.name] && f.backup; }).map(function (f) { return f.name; });
+            var names = files.filter(function (f) { return selected[f.name] && f.canRestore; }).map(function (f) { return f.name; });
             start('restore', { files: names });
         });
         $id('alCancel').addEventListener('click', function () {

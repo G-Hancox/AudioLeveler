@@ -52,6 +52,7 @@ function AudioLevelerDefaults()
         'waitIdle' => true,
         'lossless' => true,  // change MP3 volume losslessly when no limiting is needed
         'autoLevel' => false, // level new and replaced songs automatically
+        'playbackGain' => true, // use FPP's playback gain for volume-only fixes, where FPP has it
     );
 }
 
@@ -81,6 +82,35 @@ function AudioLevelerLogWritable()
 {
     $f = AudioLevelerLogFile();
     return file_exists($f) ? is_writable($f) : is_writable(dirname($f));
+}
+
+// FPP versions with File Manager > Normalize apply a per-song gain at playback
+// from <config>/media_gain.json. Where that exists, volume-only fixes go there
+// (exact, lossless, any format) instead of into the file.
+function AudioLevelerPlaybackGainSupported()
+{
+    global $settings;
+    $fpp = isset($settings['fppDir']) ? $settings['fppDir'] : '/opt/fpp';
+    return file_exists($fpp . '/www/common/audioNormalize.inc.php');
+}
+
+function AudioLevelerGainFile()
+{
+    global $settings;
+    $cfg = isset($settings['configDirectory']) ? $settings['configDirectory'] : $settings['mediaDirectory'] . '/config';
+    return rtrim($cfg, '/') . '/media_gain.json';
+}
+
+// What the worker needs to use playback gain (or not).
+function AudioLevelerPlaybackGainRequest($opt)
+{
+    global $settings;
+    $on = AudioLevelerPlaybackGainSupported() && !empty($opt['playbackGain']);
+    return array(
+        'enabled' => $on,
+        'file' => AudioLevelerPlaybackGainSupported() ? AudioLevelerGainFile() : '',
+        'lock' => rtrim($settings['mediaDirectory'], '/') . '/tmp/media_gain.lock',
+    );
 }
 
 function AudioLevelerLog($msg)
@@ -270,6 +300,7 @@ function AudioLevelerFiles()
     $analysis = AudioLevelerReadJson($data . '/analysis.json', array());
     $leveled = AudioLevelerReadJson($data . '/leveled.json', array());
     $choices = AudioLevelerReadJson($data . '/choices.json', array());
+    $gains = AudioLevelerPlaybackGainSupported() ? AudioLevelerReadJson(AudioLevelerGainFile(), array()) : array();
     $backupDir = $data . '/backups';
 
     $files = array();
@@ -310,6 +341,13 @@ function AudioLevelerFiles()
         }
         $row['backup'] = file_exists("$backupDir/$name");
         $row['choice'] = isset($choices[$name]) ? $choices[$name] : 'default';
+        // A playback gain fppd will apply (ours, or one FPP's Normalize set):
+        // only while the entry still matches this exact file.
+        if (isset($gains[$name]) && is_array($gains[$name]) && isset($gains[$name]['gainDb'], $gains[$name]['size'])
+            && intval($gains[$name]['size']) === $size) {
+            $row['pbGain'] = floatval($gains[$name]['gainDb']);
+            $row['pbSource'] = (isset($gains[$name]['source']) && $gains[$name]['source'] === 'AudioLeveler') ? 'plugin' : 'fpp';
+        }
         $files[] = $row;
     }
 
@@ -330,6 +368,7 @@ function AudioLevelerFiles()
         'backups' => array('count' => $backupCount, 'bytes' => $backupBytes),
         'freeBytes' => @disk_free_space($music),
         'haveFfmpeg' => trim(shell_exec('command -v ffmpeg 2>/dev/null')) !== '',
+        'playbackGainSupported' => AudioLevelerPlaybackGainSupported(),
     ));
 }
 
@@ -369,6 +408,7 @@ function AudioLevelerLevel()
         'waitIdle' => (bool) $opt['waitIdle'],
         'lossless' => (bool) $opt['lossless'],
         'bgOffset' => max(3, min(30, floatval($opt['bgOffset']))),
+        'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
     ));
 }
 
@@ -380,6 +420,7 @@ function AudioLevelerRestore()
     return AudioLevelerStart('restore', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
         'waitIdle' => (bool) $opt['waitIdle'],
+        'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
     ));
 }
 
@@ -468,6 +509,7 @@ function AudioLevelerWriteAutoSettings()
         'lossless' => (bool) $opt['lossless'],
         'backup' => (bool) $opt['backup'],
         'since' => intval(ReadSettingFromFile('AudioLeveler_autoSince', AUDIOLEVELER_PLUGIN)),
+        'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
         'music' => AudioLevelerMusicDir(),
         'log' => AudioLevelerLogFile(),
     );

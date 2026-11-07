@@ -54,6 +54,16 @@
                         <li><b>Background</b>: deliberately under the show, by the Background level above. <b>Skip</b>: left alone.</li>
                     </ul>
 
+                    <div id="alPlaybackGainRow" class="d-none">
+                        <div class="form-check form-switch mb-1">
+                            <input class="form-check-input" type="checkbox" role="switch" id="alPlaybackGain">
+                            <label class="form-check-label" for="alPlaybackGain">Use FPP's playback gain for volume changes</label>
+                        </div>
+                        <div class="form-text mb-3">This FPP can turn a song up or down as it plays (the same thing File Manager's Normalize uses).
+                            When a song only needs a volume change, that's used instead of changing the file: exact, lossless for every format,
+                            and the file stays exactly as uploaded. Songs that need the limiter or compression still have their file rewritten.</div>
+                    </div>
+
                     <div class="form-check form-switch mb-1">
                         <input class="form-check-input" type="checkbox" role="switch" id="alLossless">
                         <label class="form-check-label" for="alLossless">Lossless volume change for MP3s when possible</label>

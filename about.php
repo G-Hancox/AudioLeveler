@@ -89,6 +89,15 @@
                so quiet songs reach the full target with every peak kept under the ceiling. Use one or the other for a given song;
                FPP ignores its own Normalize setting for a file that has been changed since it was normalized, so they won't stack.</p>
 
+            <h6 class="fw-semibold">Playback gain (newer FPP versions)</h6>
+            <p>Newer FPP versions can turn a song up or down as it plays; File Manager's <b>Normalize</b> uses this. On those versions,
+               with <b>Use FPP's playback gain for volume changes</b> on (it is by default), a song that only needs a volume change is
+               leveled that way instead of in its file. That's exact to a tenth of a dB, lossless for every format, and the file stays exactly
+               as uploaded. Only songs that need the limiter or compression have their file rewritten. A song leveled this way shows
+               <i>playback gain</i> in its status, and <b>Restore</b> simply removes the gain. Songs FPP's own Normalize adjusted are shown as
+               <span class="badge text-bg-info">FPP Normalize</span>, and their numbers include that gain. On older FPP versions this setting doesn't appear
+               and everything works as described below.</p>
+
             <h6 class="fw-semibold">Sound quality</h6>
             <p>Each song gets the gentlest treatment that does the job:</p>
             <ul>

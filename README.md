@@ -19,6 +19,10 @@ After measuring, a **Fix** column shows what leveling will do to each song (for 
 
 **Background** levels a song deliberately quieter than the show, 10 dB under the target by default and adjustable. It's meant for ambiance and off-hours tracks that should be heard but sit under everything else. **Skip** leaves a song alone even on *Level all*.
 
+## Playback gain (FPP versions with File Manager > Normalize)
+
+Newer FPP applies a per-song gain at playback from `config/media_gain.json`; that's what File Manager's Normalize writes, and fppd ignores an entry once the file's size changes. Where this exists (detected by FPP's `www/common/audioNormalize.inc.php`), with **Use FPP's playback gain for volume changes** on (the default), a song that only needs a volume change is leveled there instead of in the file. That makes it exact (0.1 dB), lossless for every format, and the file is left as uploaded. A file the plugin rewrote earlier gets its original back first. Songs that need the limiter or compression are rewritten as before, and their stale gain entries are removed. Entries are written under FPP's own lock (`tmp/media_gain.lock`) with `"source": "AudioLeveler"`. Restore removes them. The page folds any gain into the loudness it shows, including gains set by FPP's own Normalize, which it labels as such.
+
 ## Sound quality
 
 Each song gets the gentlest treatment that does the job:

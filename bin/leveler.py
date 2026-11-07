@@ -436,6 +436,86 @@ class Worker:
             return bpath, True
         return path, False
 
+    # -- FPP's playback gain (media_gain.json) ----------------------------
+    #
+    # FPP versions with File Manager > Normalize apply a per-song gain at
+    # playback from <config>/media_gain.json: {"<name>": {"gainDb": -3.2,
+    # "size": <bytes>, ...}}, ignoring an entry whose size no longer matches
+    # the file. Where that exists, a song that only needs a volume change is
+    # leveled there instead of in the file: exact, lossless, any format. The
+    # file is updated under FPP's own lock, the way FPP's Normalize does it.
+
+    def playback_gain_on(self):
+        pg = self.req.get("playbackGain") or {}
+        return bool(pg.get("enabled") and pg.get("file"))
+
+    def update_gains(self, change):
+        """change(dict) -> True if it changed anything; written atomically under FPP's lock."""
+        pg = self.req.get("playbackGain") or {}
+        path, lock_path = pg.get("file"), pg.get("lock")
+        if not path or not os.path.isdir(os.path.dirname(path)):
+            return
+        lock = None
+        if lock_path:
+            try:
+                os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+                lock = open(lock_path, "a")
+                fcntl.flock(lock, fcntl.LOCK_EX)
+            except OSError:
+                lock = None
+        try:
+            gains = read_json(path, {})
+            if not isinstance(gains, dict):
+                gains = {}
+            if change(gains):
+                tmp = path + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    if gains:
+                        json.dump(gains, f, indent=4, sort_keys=True)
+                    else:
+                        f.write("{}")
+                    f.write("\n")
+                os.replace(tmp, path)
+        finally:
+            if lock:
+                fcntl.flock(lock, fcntl.LOCK_UN)
+                lock.close()
+
+    def current_gain(self, name, path):
+        """The playback gain fppd would apply to this file now (any source), or 0."""
+        pg = self.req.get("playbackGain") or {}
+        if not pg.get("file"):
+            return 0.0
+        gains = read_json(pg["file"], {})
+        e = gains.get(name) if isinstance(gains, dict) else None
+        try:
+            if e and int(e.get("size", -1)) == os.path.getsize(path):
+                return clamp(float(e.get("gainDb", 0)), -30.0, 20.0)
+        except (OSError, TypeError, ValueError):
+            pass
+        return 0.0
+
+    def set_gain(self, name, gain, m, target):
+        size = os.path.getsize(os.path.join(self.music, name))
+        entry = {"gainDb": round(gain, 1), "size": size,
+                 "lufs": None if m["I"] is None else round(m["I"], 1),
+                 "truePeak": None if m["TP"] is None else round(m["TP"], 1),
+                 "target": target, "match": "lufs", "measured": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                 "source": "AudioLeveler"}
+
+        def change(g):
+            g[name] = entry
+            return True
+        self.update_gains(change)
+
+    def clear_gain(self, name):
+        def change(g):
+            if name in g:
+                del g[name]
+                return True
+            return False
+        self.update_gains(change)
+
     def saved_measurement(self, name, src, from_backup):
         """The Measure step's numbers for the song as it is now, if still valid."""
         if from_backup:
@@ -545,13 +625,42 @@ class Worker:
         #    from the backup, put the untouched original back).
         if mode != "compress" and not limit and abs(gain) < NEAR_TARGET_DB:
             if not from_backup:
+                if self.current_gain(name, path):
+                    self.clear_gain(name)  # the song itself is on target: play it as is
                 return True, "already within %.1f dB of the target (%.1f LUFS), left as is" % (
                     NEAR_TARGET_DB, m["I"])
             shutil.copyfile(src, tmp)
             out, method, gain = dict(m), "original", 0.0
 
-        # 2. MP3 that only needs a volume change: change it losslessly, the way
-        #    MP3Gain does, in 1.5 dB steps. Nothing is re-encoded.
+        # 2a. Only a volume change, on an FPP that applies playback gain: set it
+        #     there. Exact, lossless for every format, and the file is left as
+        #     it is (a file we rewrote earlier gets its original back first).
+        if method is None and mode == "volume" and self.playback_gain_on():
+            if not self.wait_for_idle(name):
+                return False, "cancelled"
+            if from_backup:
+                shutil.copy2(src, path + ".restoring")
+                os.replace(path + ".restoring", path)
+            self.set_gain(name, gain, m, target)
+            sig = file_sig(path)
+            self.leveled[name] = dict(sig, target=target, ceiling=ceiling, mode=mode,
+                                      gain=round(gain, 1), limited=False, at=now(),
+                                      method="playback", backup=os.path.exists(self.backup_path(name)))
+            write_json(self.leveled_path, self.leveled)
+            entry = dict(sig)
+            entry.update(probe(path))
+            entry.update(m)
+            entry["measured"] = now()
+            self.analysis[name] = entry
+            write_json(self.analysis_path, self.analysis)
+            after = m["I"] + gain
+            held = m["TP"] is not None and m["TP"] + (target - m["I"]) > ceiling + 0.05
+            return True, "%.1f -> %.1f LUFS, %+.1f dB, playback gain (file untouched)%s" % (
+                m["I"], after, gain,
+                " (held back by peaks, ends %.1f dB under the target)" % (target - after) if held and target - after > 0.3 else "")
+
+        # 2b. MP3 that only needs a volume change: change it losslessly, the way
+        #     MP3Gain does, in 1.5 dB steps. Nothing is re-encoded.
         if method is None and ext == ".mp3" and mode != "compress" and self.req.get("lossless", True):
             steps, why = self.lossless_steps(gain, m, target, ceiling, mode)
             if steps == 0 and not from_backup:
@@ -635,6 +744,8 @@ class Worker:
         except OSError:
             pass
 
+        # The file itself is leveled now: any playback gain for it would stack.
+        self.clear_gain(name)
         sig = file_sig(path)
         self.leveled[name] = dict(sig, target=target, ceiling=ceiling, mode=mode,
                                   gain=round(gain, 2), limited=limit, at=now(),
@@ -721,6 +832,11 @@ class Worker:
                 fine_db = NEAR_TARGET_DB
                 if name.lower().endswith(".mp3") and self.req.get("lossless", True):
                     fine_db = mp3lossless.STEP_DB / 2 + 0.03
+                if cur:
+                    g = self.current_gain(name, path)
+                    cur = dict(cur, I=cur["I"] + g, TP=None if cur["TP"] is None else cur["TP"] + g)
+                    if g:
+                        fine_db = NEAR_TARGET_DB
                 if (cur and abs(cur["I"] - song_target) < fine_db
                         and (cur["TP"] is None or cur["TP"] <= ceiling + PEAK_TOLERANCE_DB)):
                     self.result(name, True, "fine as is (%.1f LUFS), left alone" % cur["I"])
@@ -813,7 +929,15 @@ class Worker:
             self.save_job(current=name, done=i)
             bpath = self.backup_path(name)
             if not os.path.exists(bpath):
-                self.result(name, False, "no backup to restore")
+                # Leveled by playback gain only: the file was never changed,
+                # so restoring is just removing that gain.
+                if name in self.our_gains():
+                    self.clear_gain(name)
+                    self.leveled.pop(name, None)
+                    write_json(self.leveled_path, self.leveled)
+                    self.result(name, True, "playback gain removed; plays as recorded")
+                else:
+                    self.result(name, False, "no backup to restore")
                 continue
             if not self.wait_for_idle(name):
                 break
@@ -821,6 +945,7 @@ class Worker:
             shutil.copy2(bpath, path + ".restoring")
             os.replace(path + ".restoring", path)
             self.leveled.pop(name, None)
+            self.clear_gain(name)  # "the original" means as recorded, no playback gain
             write_json(self.leveled_path, self.leveled)
             self.analysis.pop(name, None)
             try:
@@ -830,8 +955,16 @@ class Worker:
             self.result(name, True, "original restored")
         self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
 
+    def our_gains(self):
+        """Songs with a playback gain this plugin set."""
+        pg = self.req.get("playbackGain") or {}
+        gains = read_json(pg["file"], {}) if pg.get("file") else {}
+        if not isinstance(gains, dict):
+            return set()
+        return set(k for k, v in gains.items() if isinstance(v, dict) and v.get("source") == "AudioLeveler")
+
     def files_requested_or_backups(self):
-        have = sorted(f for f in os.listdir(self.backups) if safe_name(f))
+        have = sorted(set(f for f in os.listdir(self.backups) if safe_name(f)) | self.our_gains())
         want = self.req.get("files", "all")
         if want == "all" or not isinstance(want, list):
             return have
