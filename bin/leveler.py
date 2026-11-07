@@ -518,9 +518,19 @@ class Worker:
         out = sorted(f for f in os.listdir(self.music) if safe_name(f)
                      and os.path.isfile(os.path.join(self.music, f)))
         if self.videos and os.path.isdir(self.videos):
-            out += sorted(VIDEO_PREFIX + f for f in os.listdir(self.videos)
+            vids = sorted(VIDEO_PREFIX + f for f in os.listdir(self.videos)
                           if safe_name(VIDEO_PREFIX + f) and os.path.isfile(os.path.join(self.videos, f)))
+            out += [v for v in vids if not self.known_silent(v)]
         return out
+
+    def known_silent(self, name):
+        """A video already found to have no sound track (by the page or a measurement): skipped."""
+        sig = file_sig(self.path_of(name))
+        a = self.analysis.get(name)
+        if a and same_sig(a, sig):
+            return bool(a.get("noAudio"))
+        p = read_json(os.path.join(self.data, "videoprobe.json"), {}).get(name)
+        return bool(p and same_sig(p, sig) and not p.get("audio"))
 
     def in_scope(self, name):
         """An "all" request covers one list: songs (the default) or videos."""

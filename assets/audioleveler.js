@@ -603,6 +603,7 @@
         });
         $id('alListTitle').textContent = name === 'videos' ? 'Videos' : 'Songs';
         $id('alNameHead').textContent = name === 'videos' ? 'Video' : 'Song';
+        $id('alSilentNote').classList.toggle('d-none', name !== 'videos');
         selected = {};
         setFilter('all');
         files = allFiles.filter(inTab);
@@ -628,6 +629,10 @@
             $id('alTabVideos').querySelector('.badge').textContent = nVideos;
             $id('alTabVideosItem').classList.toggle('d-none', !nVideos);
             if (!nVideos && tab === 'videos') { setTab('songs', true); }
+            var silent = j.silentVideos || 0;
+            $id('alSilentNote').textContent = silent
+                ? silent + ' video' + (silent === 1 ? ' has' : 's have') + ' no sound track, so ' + (silent === 1 ? 'it isn\'t' : 'they aren\'t') + ' listed.'
+                : '';
             files = allFiles.filter(inTab);
             $id('alPlaybackGainRow').classList.toggle('d-none', !pgSupported);
             // Show what each song will actually sound like: its own loudness

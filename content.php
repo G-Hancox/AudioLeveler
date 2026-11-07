@@ -163,6 +163,8 @@
                         replaces the leveled copy, and it's then marked <b>Replaced since leveling</b>. Just level it again.
                     </p>
 
+                    <div id="alSilentNote" class="small text-body-secondary mb-2 d-none"></div>
+
                     <!-- At-a-glance numbers -->
                     <div id="alStats" class="row g-2 mb-3"></div>
 
