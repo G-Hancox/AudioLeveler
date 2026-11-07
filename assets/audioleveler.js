@@ -15,6 +15,7 @@
     // Songs and videos are two separate lists, one tab each: 'files' is the
     // current tab's list, and every button acts on that tab only.
     var allFiles = [];
+    var probeTimer = null;
     var tab = 'songs';
     try { if (localStorage.getItem('audioLeveler.tab') === 'videos') { tab = 'videos'; } } catch (e) { /* no storage */ }
     function noun(n) { return tab === 'videos' ? (n === 1 ? 'video' : 'videos') : (n === 1 ? 'song' : 'songs'); }
@@ -627,12 +628,18 @@
             var nVideos = allFiles.filter(function (f) { return f.video; }).length;
             $id('alTabSongs').querySelector('.badge').textContent = allFiles.length - nVideos;
             $id('alTabVideos').querySelector('.badge').textContent = nVideos;
-            $id('alTabVideosItem').classList.toggle('d-none', !nVideos);
-            if (!nVideos && tab === 'videos') { setTab('songs', true); }
+            var checking = j.videosChecking || 0;
+            $id('alTabVideosItem').classList.toggle('d-none', !nVideos && !checking);
+            if (!nVideos && !checking && tab === 'videos') { setTab('songs', true); }
             var silent = j.silentVideos || 0;
-            $id('alSilentNote').textContent = silent
-                ? silent + ' video' + (silent === 1 ? ' has' : 's have') + ' no sound track, so ' + (silent === 1 ? 'it isn\'t' : 'they aren\'t') + ' listed.'
-                : '';
+            $id('alSilentNote').innerHTML =
+                (checking ? '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>Checking ' + checking +
+                    ' video' + (checking === 1 ? '' : 's') + ' for a sound track. They appear here as they\'re checked. ' : '') +
+                (silent ? silent + ' video' + (silent === 1 ? ' has' : 's have') + ' no sound track, so ' +
+                    (silent === 1 ? 'it isn\'t' : 'they aren\'t') + ' listed.' : '');
+            // The check runs in the background: look again shortly for its answers.
+            clearTimeout(probeTimer);
+            if (checking) { probeTimer = setTimeout(loadFiles, 3000); }
             files = allFiles.filter(inTab);
             $id('alPlaybackGainRow').classList.toggle('d-none', !pgSupported);
             // Show what each song will actually sound like: its own loudness

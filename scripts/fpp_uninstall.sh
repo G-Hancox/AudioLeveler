@@ -16,7 +16,7 @@ pkill -f "AudioLeveler/bin/leveler.py" 2>/dev/null || true
 # the user where they are so they can delete them when they want.
 if [ -d "${DATADIR}" ]; then
     rm -rf "${DATADIR}/tmp"
-    rm -f "${DATADIR}/analysis.json" "${DATADIR}/leveled.json" "${DATADIR}/choices.json" "${DATADIR}/auto.json" "${DATADIR}/auto.last" "${DATADIR}/videoprobe.json" "${DATADIR}/job.json" \
+    rm -f "${DATADIR}/analysis.json" "${DATADIR}/leveled.json" "${DATADIR}/choices.json" "${DATADIR}/auto.json" "${DATADIR}/auto.last" "${DATADIR}/videoprobe.json" "${DATADIR}/probe.lock" "${DATADIR}/job.json" \
           "${DATADIR}/request.json" "${DATADIR}/launch.json" "${DATADIR}/cancel" "${DATADIR}/worker.lock" \
           "${DATADIR}"/*.tmp
     if [ -d "${DATADIR}/backups" ] && [ -z "$(ls -A "${DATADIR}/backups")" ]; then

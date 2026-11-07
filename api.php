@@ -334,10 +334,11 @@ function AudioLevelerStartThroughFppd()
     return $ok !== false && isset($headers[0]) && preg_match('#^HTTP/\S+\s+200#', $headers[0]);
 }
 
-// Whether a video has a sound track. A quick look at the file's header with
-// ffprobe (no decoding), remembered in videoprobe.json by size and date so
-// each video is only ever checked once (again if it's replaced).
-function AudioLevelerVideoHasAudio($name, $path, $size, $mtime, $analysis, &$cache, &$changed)
+// Whether a video has a sound track: true, false, or null when it hasn't
+// been checked yet. Checking (bin/probe_videos.py, one quick ffprobe of the
+// header per video) runs in the background, so a folder of hundreds of
+// videos never holds up the page; answers land in videoprobe.json.
+function AudioLevelerVideoHasAudio($name, $size, $mtime, $analysis, $cache)
 {
     if (isset($analysis[$name]) && $analysis[$name]['size'] == $size && $analysis[$name]['mtime'] == $mtime) {
         return empty($analysis[$name]['noAudio']);
@@ -345,17 +346,30 @@ function AudioLevelerVideoHasAudio($name, $path, $size, $mtime, $analysis, &$cac
     if (isset($cache[$name]) && $cache[$name]['size'] == $size && $cache[$name]['mtime'] == $mtime) {
         return !empty($cache[$name]['audio']);
     }
-    $lines = array();
-    $rc = 1;
-    exec('timeout 15 ffprobe -v error -select_streams a -show_entries stream=index -of csv=p=0 '
-        . escapeshellarg($path) . ' 2>/dev/null', $lines, $rc);
-    if ($rc !== 0) {
-        return true; // couldn't tell (no ffprobe, unreadable file): list it, measuring sorts it out
+    return null;
+}
+
+// Start the background check unless it's already running.
+function AudioLevelerStartVideoProbe($videoDir)
+{
+    $data = AudioLevelerDataDir();
+    $lock = @fopen($data . '/probe.lock', 'c');
+    if ($lock) {
+        $free = flock($lock, LOCK_EX | LOCK_NB);
+        if ($free) {
+            flock($lock, LOCK_UN);
+        }
+        fclose($lock);
+        if (!$free) {
+            return;
+        }
     }
-    $audio = trim(implode('', $lines)) !== '';
-    $cache[$name] = array('size' => $size, 'mtime' => $mtime, 'audio' => $audio);
-    $changed = true;
-    return $audio;
+    $prio = 'nice -n 19';
+    if (trim(shell_exec('command -v ionice 2>/dev/null')) !== '') {
+        $prio .= ' ionice -c 3';
+    }
+    exec(sprintf('nohup %s python3 %s --videos %s --data %s > /dev/null 2>&1 &', $prio,
+        escapeshellarg(__DIR__ . '/bin/probe_videos.py'), escapeshellarg($videoDir), escapeshellarg($data)));
 }
 
 // GET /api/plugin/AudioLeveler/files
@@ -372,9 +386,8 @@ function AudioLevelerFiles()
 
     $files = array();
     $silentVideos = 0;
-    $probePath = $data . '/videoprobe.json';
-    $probe = AudioLevelerReadJson($probePath, array());
-    $probeChanged = false;
+    $checking = 0;
+    $probe = AudioLevelerReadJson($data . '/videoprobe.json', array());
     $names = array();
     foreach (is_dir($music) ? scandir($music) : array() as $n) {
         $names[$n] = "$music/$n";
@@ -393,8 +406,14 @@ function AudioLevelerFiles()
         $mtime = filemtime($path);
         $row = array('name' => $name, 'size' => $size, 'mtime' => $mtime);
         if (strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0) {
-            // Videos without sound have nothing to level: left off the list.
-            if (!AudioLevelerVideoHasAudio($name, $path, $size, $mtime, $analysis, $probe, $probeChanged)) {
+            // Videos without sound have nothing to level: left off the list,
+            // as are ones not checked yet (they appear as the check gets to them).
+            $audio = AudioLevelerVideoHasAudio($name, $size, $mtime, $analysis, $probe);
+            if ($audio === null) {
+                $checking++;
+                continue;
+            }
+            if (!$audio) {
                 $silentVideos++;
                 continue;
             }
@@ -444,9 +463,8 @@ function AudioLevelerFiles()
         $files[] = $row;
     }
 
-    if ($probeChanged) {
-        @file_put_contents($probePath . '.tmp', json_encode($probe));
-        @rename($probePath . '.tmp', $probePath);
+    if ($checking) {
+        AudioLevelerStartVideoProbe($videoDir);
     }
 
     $backupBytes = 0;
@@ -460,6 +478,7 @@ function AudioLevelerFiles()
         'status' => 'OK',
         'files' => $files,
         'silentVideos' => $silentVideos,
+        'videosChecking' => $checking,
         'backups' => array('count' => $backupCount, 'bytes' => $backupBytes),
         'freeBytes' => @disk_free_space($music),
         'haveFfmpeg' => trim(shell_exec('command -v ffmpeg 2>/dev/null')) !== '',

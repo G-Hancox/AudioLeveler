@@ -87,7 +87,7 @@
                <b>Measure</b> and <b>Level all</b> only work on the tab that's open. A video's sound is leveled to match your songs,
                so a video in a playlist isn't louder or quieter than the songs around it.
                Only the sound is ever touched: on FPP versions that can turn a video's sound up or down as it plays, a volume change goes there and the file isn't changed;
-               otherwise the picture is copied exactly as it is and just the sound is re-encoded at high quality. Videos without a sound track aren't listed; the page checks each video's header once to find out.
+               otherwise the picture is copied exactly as it is and just the sound is re-encoded at high quality. Videos without a sound track aren't listed. The first time, each video is checked for sound in the background; with a lot of videos that takes a minute or two on a Pi, and they appear on the tab as they're checked. After that it's instant.
                Video backups can be large, so keep an eye on free space.</p>
 
             <h6 class="fw-semibold">Automatic leveling</h6>
