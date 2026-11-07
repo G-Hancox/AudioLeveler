@@ -55,6 +55,15 @@ The status column shows which path each song took.
 3. Press **Level all**, or tick songs and press **Level selected**.
 4. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
 
+## Videos
+
+With **Include videos** on (the default), the videos in FPP's videos folder are listed with the songs (marked *video*, with a **Videos** filter) and their sound is measured and leveled the same way, so a video in a playlist plays as loud as the songs around it. Every fix, recommendation, Background, Skip, speaker matching and automatic leveling work the same.
+
+- **Only the sound is touched.** Where FPP applies playback gain to videos (newer FPP), a volume-only fix goes there and the file isn't changed at all. Otherwise the file is rewritten with the picture, subtitles and any extra sound tracks copied bit for bit (`-c copy`); only the first sound track is re-encoded (AAC at 256 to 320 kbps for MP4/MOV/MKV, Opus for WebM, MP3 320 kbps for AVI). In testing, the picture stream was byte-identical and audio stayed within 7 ms of the picture.
+- A video with no sound track is shown as *No sound track* and left alone.
+- Videos are backed up like songs (in `backups/videos/`), and they can be large, so keep an eye on free space.
+- Internally a video is named `videos/<file>`, the same key FPP's own Normalize uses in `media_gain.json`.
+
 ## Automatic leveling
 
 With **Level new and replaced songs automatically** switched on, which is off by default, songs added or changed afterwards are measured and given their fix with no page visit needed. That covers re-uploads from xLights' FPP Connect, which would otherwise undo leveling. The plugin checks:

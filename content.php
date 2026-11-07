@@ -103,6 +103,13 @@
                         are re-encoded at top quality (MP3 at 320 kbps).</div>
 
                     <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" role="switch" id="alVideos">
+                        <label class="form-check-label" for="alVideos">Include videos</label>
+                    </div>
+                    <div class="form-text mb-3">Lists the videos in FPP's videos folder alongside the songs, so their sound is leveled to match.
+                        Only the sound is touched: the picture is copied exactly as it is. A video without a sound track is left alone.</div>
+
+                    <div class="form-check form-switch mb-1">
                         <input class="form-check-input" type="checkbox" role="switch" id="alAutoLevel">
                         <label class="form-check-label" for="alAutoLevel">Level new and replaced songs automatically</label>
                     </div>
@@ -165,6 +172,7 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="replaced">Replaced</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="unmeasured">Not measured</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="custom">Custom fix</button>
+                            <button type="button" id="alFilterVideos" class="btn btn-sm btn-outline-secondary rounded-pill d-none" aria-pressed="false" data-filter="videos">Videos</button>
                         </div>
                         <input id="alSearch" type="search" class="form-control form-control-sm w-auto ms-auto" placeholder="Search songs" aria-label="Search songs">
                     </div>

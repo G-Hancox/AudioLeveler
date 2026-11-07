@@ -4,7 +4,7 @@
  *
  * All endpoints live under /api/plugin/AudioLeveler/...
  *
- *   GET    files      songs in the music folder with their measurements
+ *   GET    files      songs in the music folder (and videos, named "videos/<file>") with their measurements
  *   GET    job        progress of the current / last job
  *   POST   analyze    measure loudness            body: {"files": [...]|"all", "force": bool}
  *   POST   level      level songs                 body: {"files": [...]|"all", "target", "ceiling", "mode", "backup", "waitIdle"}
@@ -54,6 +54,7 @@ function AudioLevelerDefaults()
         'autoLevel' => false, // level new and replaced songs automatically
         'playbackGain' => true, // use FPP's playback gain for volume-only fixes, where FPP has it
         'match' => 'speakers', // speakers (ignore deep bass, as FPP's Normalize) | lufs
+        'videos' => true,    // level the sound of the videos in the videos folder too
     );
 }
 
@@ -73,6 +74,20 @@ function AudioLevelerMusicDir()
     return rtrim($settings['musicDirectory'], '/');
 }
 
+// The videos folder, or '' when videos are switched off (the worker then leaves them out).
+function AudioLevelerVideoDir($opt = null)
+{
+    global $settings;
+    if ($opt === null) {
+        $opt = AudioLevelerOptions();
+    }
+    if (empty($opt['videos'])) {
+        return '';
+    }
+    $dir = isset($settings['videoDirectory']) ? $settings['videoDirectory'] : $settings['mediaDirectory'] . '/videos';
+    return rtrim($dir, '/');
+}
+
 function AudioLevelerLogFile()
 {
     global $settings;
@@ -88,11 +103,16 @@ function AudioLevelerLogWritable()
 // FPP versions with File Manager > Normalize apply a per-song gain at playback
 // from <config>/media_gain.json. Where that exists, volume-only fixes go there
 // (exact, lossless, any format) instead of into the file.
-function AudioLevelerPlaybackGainSupported()
+function AudioLevelerNormalizeFile()
 {
     global $settings;
     $fpp = isset($settings['fppDir']) ? $settings['fppDir'] : '/opt/fpp';
-    return file_exists($fpp . '/www/common/audioNormalize.inc.php');
+    return $fpp . '/www/common/audioNormalize.inc.php';
+}
+
+function AudioLevelerPlaybackGainSupported()
+{
+    return file_exists(AudioLevelerNormalizeFile());
 }
 
 function AudioLevelerGainFile()
@@ -107,8 +127,11 @@ function AudioLevelerPlaybackGainRequest($opt)
 {
     global $settings;
     $on = AudioLevelerPlaybackGainSupported() && !empty($opt['playbackGain']);
+    // Playback gain for a video's sound came with FPP's Normalize handling videos.
+    $videos = $on && strpos((string) @file_get_contents(AudioLevelerNormalizeFile()), "'videos/'") !== false;
     return array(
         'enabled' => $on,
+        'videos' => $videos,
         'file' => AudioLevelerPlaybackGainSupported() ? AudioLevelerGainFile() : '',
         'lock' => rtrim($settings['mediaDirectory'], '/') . '/tmp/media_gain.lock',
     );
@@ -128,13 +151,24 @@ function AudioLevelerReadJson($path, $default)
     return is_array($j) ? $j : $default;
 }
 
+define('AUDIOLEVELER_VIDEO_PREFIX', 'videos/');
+
+// A song in the music folder ("name.mp3") or a video in the videos folder
+// ("videos/name.mp4", the same key FPP's media_gain.json uses).
 function AudioLevelerIsAudio($name)
 {
-    if (!is_string($name) || $name === '' || $name !== basename($name) || $name[0] === '.') {
+    if (!is_string($name) || $name === '') {
         return false;
     }
-    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-    return in_array($ext, array('mp3', 'm4a', 'aac', 'ogg', 'oga', 'wav', 'flac'));
+    $exts = array('mp3', 'm4a', 'aac', 'ogg', 'oga', 'wav', 'flac');
+    if (strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0) {
+        $name = substr($name, strlen(AUDIOLEVELER_VIDEO_PREFIX));
+        $exts = array('mp4', 'm4v', 'mov', 'mkv', 'webm', 'avi');
+    }
+    if ($name === '' || $name !== basename($name) || $name[0] === '.') {
+        return false;
+    }
+    return in_array(strtolower(pathinfo($name, PATHINFO_EXTENSION)), $exts);
 }
 
 // Progress and song lists change constantly; make sure no browser or proxy
@@ -230,7 +264,7 @@ function AudioLevelerStart($command, $request)
     )));
 
     // The worker's command line, for fppd's Start Job command to run.
-    $argv = array($command, '--music', AudioLevelerMusicDir(), '--data', $data,
+    $argv = array($command, '--music', AudioLevelerMusicDir(), '--videos', AudioLevelerVideoDir(), '--data', $data,
         '--log', AudioLevelerLogFile(), '--request', $reqFile);
     file_put_contents($data . '/launch.json', json_encode(array('argv' => $argv)));
 
@@ -247,11 +281,12 @@ function AudioLevelerStart($command, $request)
         $prio .= ' ionice -c 3';
     }
     $cmd = sprintf(
-        'nohup %s python3 %s %s --music %s --data %s --log %s --request %s > /dev/null 2>> %s &',
+        'nohup %s python3 %s %s --music %s --videos %s --data %s --log %s --request %s > /dev/null 2>> %s &',
         $prio,
         escapeshellarg($script),
         escapeshellarg($command),
         escapeshellarg(AudioLevelerMusicDir()),
+        escapeshellarg(AudioLevelerVideoDir()),
         escapeshellarg($data),
         escapeshellarg(AudioLevelerLogFile()),
         escapeshellarg($reqFile),
@@ -305,14 +340,26 @@ function AudioLevelerFiles()
     $backupDir = $data . '/backups';
 
     $files = array();
-    $names = is_dir($music) ? scandir($music) : array();
-    foreach ($names as $name) {
-        if (!AudioLevelerIsAudio($name) || !is_file("$music/$name")) {
+    $names = array();
+    foreach (is_dir($music) ? scandir($music) : array() as $n) {
+        $names[$n] = "$music/$n";
+    }
+    $videoDir = AudioLevelerVideoDir();
+    if ($videoDir !== '' && is_dir($videoDir)) {
+        foreach (scandir($videoDir) as $n) {
+            $names[AUDIOLEVELER_VIDEO_PREFIX . $n] = "$videoDir/$n";
+        }
+    }
+    foreach ($names as $name => $path) {
+        if (!AudioLevelerIsAudio($name) || !is_file($path)) {
             continue;
         }
-        $size = filesize("$music/$name");
-        $mtime = filemtime("$music/$name");
+        $size = filesize($path);
+        $mtime = filemtime($path);
         $row = array('name' => $name, 'size' => $size, 'mtime' => $mtime);
+        if (strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0) {
+            $row['video'] = true;
+        }
 
         $a = isset($analysis[$name]) ? $analysis[$name] : null;
         if ($a && $a['size'] == $size && $a['mtime'] == $mtime) {
@@ -323,6 +370,9 @@ function AudioLevelerFiles()
             $row['spk'] = isset($a['spk']) ? $a['spk'] : null;
             $row['hasSpk'] = array_key_exists('spk', $a);
             $row['measured'] = true;
+            if (!empty($a['noAudio'])) {
+                $row['noAudio'] = true;
+            }
         } else {
             $row['measured'] = false;
         }
@@ -356,13 +406,9 @@ function AudioLevelerFiles()
 
     $backupBytes = 0;
     $backupCount = 0;
-    if (is_dir($backupDir)) {
-        foreach (scandir($backupDir) as $b) {
-            if (AudioLevelerIsAudio($b)) {
-                $backupBytes += filesize("$backupDir/$b");
-                $backupCount++;
-            }
-        }
+    foreach (AudioLevelerBackupFiles() as $b) {
+        $backupBytes += filesize($b);
+        $backupCount++;
     }
 
     return json(array(
@@ -372,7 +418,26 @@ function AudioLevelerFiles()
         'freeBytes' => @disk_free_space($music),
         'haveFfmpeg' => trim(shell_exec('command -v ffmpeg 2>/dev/null')) !== '',
         'playbackGainSupported' => AudioLevelerPlaybackGainSupported(),
+        'playbackGainVideos' => AudioLevelerPlaybackGainRequest(AudioLevelerOptions())['videos'],
     ));
+}
+
+// Every backed-up original: songs in backups/, videos in backups/videos/.
+function AudioLevelerBackupFiles()
+{
+    $dir = AudioLevelerDataDir() . '/backups';
+    $out = array();
+    foreach (array('' => $dir, AUDIOLEVELER_VIDEO_PREFIX => "$dir/videos") as $prefix => $d) {
+        if (!is_dir($d)) {
+            continue;
+        }
+        foreach (scandir($d) as $f) {
+            if (AudioLevelerIsAudio($prefix . $f) && is_file("$d/$f")) {
+                $out[] = "$d/$f";
+            }
+        }
+    }
+    return $out;
 }
 
 // GET /api/plugin/AudioLeveler/job
@@ -521,6 +586,7 @@ function AudioLevelerWriteAutoSettings()
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
         'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
         'music' => AudioLevelerMusicDir(),
+        'videos' => AudioLevelerVideoDir($opt),
         'log' => AudioLevelerLogFile(),
     );
     $path = AudioLevelerDataDir() . '/auto.json';
@@ -554,13 +620,10 @@ function AudioLevelerDeleteBackups()
     if (AudioLevelerBusy()) {
         return AudioLevelerError(409, 'Wait for the running job to finish first.');
     }
-    $dir = AudioLevelerDataDir() . '/backups';
     $n = 0;
-    if (is_dir($dir)) {
-        foreach (scandir($dir) as $f) {
-            if (AudioLevelerIsAudio($f) && @unlink("$dir/$f")) {
-                $n++;
-            }
+    foreach (AudioLevelerBackupFiles() as $f) {
+        if (@unlink($f)) {
+            $n++;
         }
     }
     AudioLevelerLog("Deleted $n backup(s)");

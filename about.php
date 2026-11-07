@@ -82,6 +82,13 @@
                so a whole library can take a few hours. Measuring alone is quicker. It's safe to start a big job and leave it running overnight;
                it waits for shows and you can close the browser. Speed doesn't affect quality.</p>
 
+            <h6 class="fw-semibold">Videos</h6>
+            <p>With <b>Include videos</b> on, the videos in FPP's videos folder are listed with your songs (marked <span class="badge text-bg-secondary fw-normal">video</span>)
+               and their sound is leveled to match, so a video in a playlist isn't louder or quieter than the songs around it.
+               Only the sound is ever touched: on FPP versions that can turn a video's sound up or down as it plays, a volume change goes there and the file isn't changed;
+               otherwise the picture is copied exactly as it is and just the sound is re-encoded at high quality. Videos without sound are left alone.
+               Video backups can be large, so keep an eye on free space.</p>
+
             <h6 class="fw-semibold">Automatic leveling</h6>
             <p>Switch on <b>Level new and replaced songs automatically</b> and songs you add or change afterwards, such as uploads from xLights,
                are measured and given their fix without you opening this page. It checks when FPP starts, whenever a playlist stops,

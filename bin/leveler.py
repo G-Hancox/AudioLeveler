@@ -2,8 +2,8 @@
 """
 Audio Leveler worker for FPP.
 
-Measures the loudness of the songs in FPP's music folder and rewrites them to
-a common level with ffmpeg. Runs as a background process started by api.php,
+Measures the loudness of the songs in FPP's music folder (and the sound of
+the videos in its videos folder) and levels them to a common loudness. Runs as a background process started by api.php,
 at low CPU/IO priority, one job at a time.
 
 Commands:
@@ -38,6 +38,11 @@ import mp3lossless  # noqa: E402
 PLUGIN = "AudioLeveler"
 
 AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".ogg", ".oga", ".wav", ".flac"}
+
+# Videos are named "videos/<file>" everywhere (the page, our JSON files and
+# FPP's media_gain.json alike), so they never clash with a song's name.
+VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi"}
+VIDEO_PREFIX = "videos/"
 
 # Timing tolerance between the original and leveled file, in seconds. A
 # leveled file that differs by more than this is thrown away rather than put
@@ -96,9 +101,6 @@ def recommend(I, TP, target, ceiling):
     if over <= GENTLE_LIMIT_DB:
         return "limit"
     return "volume"
-    if over <= GENTLE_LIMIT_DB:
-        return "limit"
-    return "volume"
 
 
 # --------------------------------------------------------------------------
@@ -141,11 +143,23 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+def is_video(name):
+    return name.startswith(VIDEO_PREFIX)
+
+
 def safe_name(name):
-    """Song names come from the API; only accept plain names in the music folder."""
+    """
+    Names come from the API; only accept a plain name in the music folder, or
+    "videos/" + a plain name in the videos folder.
+    """
+    if not name:
+        return False
+    exts = AUDIO_EXTS
+    if is_video(name):
+        name, exts = name[len(VIDEO_PREFIX):], VIDEO_EXTS
     if not name or name != os.path.basename(name) or name.startswith("."):
         return False
-    return os.path.splitext(name)[1].lower() in AUDIO_EXTS
+    return os.path.splitext(name)[1].lower() in exts
 
 
 # --------------------------------------------------------------------------
@@ -154,6 +168,10 @@ def safe_name(name):
 
 class Cancelled(Exception):
     """The user pressed Cancel; stop the current song right away."""
+
+
+class NoAudio(Exception):
+    """A video with no sound track: nothing to level."""
 
 
 # Set by the worker: a file whose appearance means "cancel now".
@@ -198,7 +216,7 @@ def probe(path):
     j = json.loads(r.stdout or "{}")
     streams = j.get("streams") or []
     if not streams:
-        raise RuntimeError("no audio stream found")
+        raise NoAudio("no sound track")
     s = streams[0]
     fmt = j.get("format") or {}
     br = s.get("bit_rate") or fmt.get("bit_rate") or 0
@@ -381,6 +399,26 @@ def codec_args(ext, info):
     raise RuntimeError("unsupported file type")
 
 
+def video_codec_args(ext, info):
+    """
+    For a video: the picture (and subtitles) are copied untouched; only the
+    sound is re-encoded, at a generous bitrate, in a codec the container takes.
+    """
+    br = info.get("br") or 0
+    if ext == ".webm":
+        if have_encoder("libopus"):
+            return ["-c:a:0", "libopus", "-b:a:0", "%dk" % clamp(br or 192, 192, 320)]
+        if have_encoder("libvorbis"):
+            return ["-c:a:0", "libvorbis", "-q:a:0", "7"]
+        raise RuntimeError("this FPP's ffmpeg cannot write WebM sound")
+    if ext == ".avi":
+        return ["-c:a:0", "libmp3lame", "-b:a:0", "320k", "-compression_level", "0"]
+    args = ["-c:a:0", "aac", "-b:a:0", "%dk" % clamp(br or 256, 256, 320)]
+    if ext in (".mp4", ".m4v", ".mov"):
+        args += ["-movflags", "+faststart"]
+    return args
+
+
 # --------------------------------------------------------------------------
 # FPP status
 
@@ -409,10 +447,11 @@ def now_playing(st):
 class Worker:
     def __init__(self, args):
         self.music = args.music.rstrip("/")
+        self.videos = (getattr(args, "videos", None) or "").rstrip("/")
         self.data = args.data.rstrip("/")
         self.backups = os.path.join(self.data, "backups")
         self.tmpdir = os.path.join(self.data, "tmp")
-        for d in (self.data, self.backups, self.tmpdir):
+        for d in (self.data, self.backups, os.path.join(self.backups, "videos"), self.tmpdir):
             os.makedirs(d, exist_ok=True)
         self.analysis_path = os.path.join(self.data, "analysis.json")
         self.leveled_path = os.path.join(self.data, "leveled.json")
@@ -449,18 +488,19 @@ class Worker:
                 return False
             st = fpp_status()
             playing = now_playing(st)
+            here = os.path.basename(name)
             if not show_running(st):
                 break
-            if not wait and playing != name:
+            if not wait and playing != os.path.basename(name):
                 break
             if not announced:
-                why = ("this song is playing right now" if playing == name
+                why = ("this song is playing right now" if playing == here
                        else "a show is playing")
                 logging.info("Waiting: %s", why)
                 announced = True
             self.save_job(state="waiting",
                           message="Paused until the show stops (%s)." %
-                          ("this song is playing" if playing == name else "a show is playing"))
+                          ("this song is playing" if playing == here else "a show is playing"))
             time.sleep(15)
         if self.job.get("state") == "waiting":
             self.save_job(state="running", message="")
@@ -468,9 +508,22 @@ class Worker:
 
     # -- per-file bookkeeping --------------------------------------------
 
+    def path_of(self, name):
+        if is_video(name):
+            return os.path.join(self.videos, name[len(VIDEO_PREFIX):])
+        return os.path.join(self.music, name)
+
+    def all_media(self):
+        """Every song, then every video (when videos are included), by name."""
+        out = sorted(f for f in os.listdir(self.music) if safe_name(f)
+                     and os.path.isfile(os.path.join(self.music, f)))
+        if self.videos and os.path.isdir(self.videos):
+            out += sorted(VIDEO_PREFIX + f for f in os.listdir(self.videos)
+                          if safe_name(VIDEO_PREFIX + f) and os.path.isfile(os.path.join(self.videos, f)))
+        return out
+
     def files_requested(self):
-        listed = sorted(f for f in os.listdir(self.music) if safe_name(f)
-                        and os.path.isfile(os.path.join(self.music, f)))
+        listed = self.all_media()
         want = self.req.get("files", "all")
         if want == "all" or not isinstance(want, list):
             return listed
@@ -487,7 +540,7 @@ class Worker:
         never stack up encoding loss. If the song was replaced since (a new
         upload), the current file is the new original.
         """
-        path = os.path.join(self.music, name)
+        path = self.path_of(name)
         bpath = self.backup_path(name)
         rec = self.leveled.get(name)
         if os.path.exists(bpath) and rec and same_sig(rec, file_sig(path)):
@@ -554,7 +607,7 @@ class Worker:
         return 0.0
 
     def set_gain(self, name, gain, m, target):
-        size = os.path.getsize(os.path.join(self.music, name))
+        size = os.path.getsize(self.path_of(name))
         entry = {"gainDb": round(gain, 1), "size": size,
                  "lufs": None if m["I"] is None else round(m["I"], 1),
                  "truePeak": None if m["TP"] is None else round(m["TP"], 1),
@@ -579,6 +632,8 @@ class Worker:
 
     def measurement_ok(self, c):
         """A saved measurement has what's needed (the speaker level, when matching by speakers)."""
+        if c and c.get("noAudio"):
+            return True
         return bool(c) and c.get("I") is not None and c.get("len") and (not self.speakers() or "spk" in c)
 
     def saved_measurement(self, name, src, from_backup):
@@ -586,17 +641,25 @@ class Worker:
         if from_backup:
             return None
         c = self.analysis.get(name)
-        if c and same_sig(c, file_sig(src)) and self.measurement_ok(c):
+        if c and same_sig(c, file_sig(src)) and self.measurement_ok(c) and not c.get("noAudio"):
             return {k: c.get(k) for k in ("I", "TP", "LRA", "len", "spk")}
         return None
 
     def analyze_one(self, name, force=False):
-        path = os.path.join(self.music, name)
+        path = self.path_of(name)
         sig = file_sig(path)
         cached = self.analysis.get(name)
         if not force and cached and same_sig(cached, sig) and self.measurement_ok(cached):
             return cached
-        info = probe(path)
+        try:
+            info = probe(path)
+        except NoAudio:
+            if not is_video(name):
+                raise
+            entry = dict(sig, noAudio=True, I=None, TP=None, LRA=None, len=None, measured=now())
+            self.analysis[name] = entry
+            write_json(self.analysis_path, self.analysis)
+            return entry
         m = measure(path, speakers=self.speakers())
         entry = dict(sig)
         entry.update(info)
@@ -619,7 +682,8 @@ class Worker:
             try:
                 e = self.analyze_one(name, force)
                 self.result(name, True, "%.1f LUFS, peak %.1f dBTP" % (e["I"], e["TP"])
-                            if e.get("I") is not None else "silent")
+                            if e.get("I") is not None else
+                            "no sound track" if e.get("noAudio") else "silent")
             except Cancelled:
                 break
             except Exception as ex:
@@ -655,11 +719,17 @@ class Worker:
         return ",".join(parts)
 
     def level_one(self, name, target, ceiling, mode, keep_backup):
-        path = os.path.join(self.music, name)
+        path = self.path_of(name)
         ext = os.path.splitext(name)[1].lower()
         src, from_backup = self.original_for(name)
+        video = is_video(name)
 
-        info = probe(src)
+        try:
+            info = probe(src)
+        except NoAudio:
+            if video:
+                return True, "no sound track, nothing to level"
+            raise
         # Reuse the Measure step's numbers when they belong to this exact
         # file, so songs that are already fine are passed over instantly.
         saved = self.saved_measurement(name, src, from_backup)
@@ -700,7 +770,8 @@ class Worker:
         # 2a. Only a volume change, on an FPP that applies playback gain: set it
         #     there. Exact, lossless for every format, and the file is left as
         #     it is (a file we rewrote earlier gets its original back first).
-        if method is None and mode == "volume" and self.playback_gain_on():
+        if method is None and mode == "volume" and self.playback_gain_on() and (
+                not video or (self.req.get("playbackGain") or {}).get("videos")):
             if not self.wait_for_idle(name):
                 return False, "cancelled"
             if from_backup:
@@ -734,7 +805,7 @@ class Worker:
             if steps is not None:
                 try:
                     mp3lossless.apply(src, tmp, steps)
-                    out = measure(tmp)
+                    out = measure(tmp, speakers=self.speakers())
                     if out["TP"] is not None and out["TP"] > ceiling + 0.3:
                         raise mp3lossless.NotLossless("peaks came out above the ceiling")
                     method, gain, limit = ("lossless" if steps else "original"), steps * mp3lossless.STEP_DB, False
@@ -753,9 +824,18 @@ class Worker:
             dither = needs_dither(ext, info)
             for attempt in (1, 2):
                 af = self.build_filter(gain, limit, ceiling, info["sr"], mode, dither)
-                cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src, "-vn",
-                       "-map", "0:a:0", "-map_metadata", "0", "-af", af,
-                       "-ar", str(info["sr"]), "-ac", str(info["ch"])] + codec_args(ext, info) + [tmp]
+                if video:
+                    # Picture, subtitles and any other sound tracks are copied
+                    # as they are; only the first sound track is leveled. The
+                    # filter ends at the track's own sample rate.
+                    cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src,
+                           "-map", "0:v?", "-map", "0:a", "-map", "0:s?", "-map_metadata", "0",
+                           "-c", "copy", "-filter:a:0", af, "-ac:a:0", str(info["ch"])] + \
+                        video_codec_args(ext, info) + [tmp]
+                else:
+                    cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src, "-vn",
+                           "-map", "0:a:0", "-map_metadata", "0", "-af", af,
+                           "-ar", str(info["sr"]), "-ac", str(info["ch"])] + codec_args(ext, info) + [tmp]
                 r = run(cmd)
                 if r.returncode != 0 or not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
                     tail = (r.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
@@ -763,7 +843,7 @@ class Worker:
                         os.remove(tmp)
                     return False, "ffmpeg failed: " + tail[0]
                 # Check the new file before it goes anywhere near the show.
-                out = measure(tmp)
+                out = measure(tmp, speakers=self.speakers())
                 miss = None if out["I"] is None else expected - out["I"]
                 # The encoder or limiter can shift loudness a little; one corrective
                 # pass brings it back on target. Volume-only mode can't go up past
@@ -791,6 +871,7 @@ class Worker:
         # Keep the original the first time we touch this song.
         bpath = self.backup_path(name)
         if keep_backup and not from_backup:
+            os.makedirs(os.path.dirname(bpath), exist_ok=True)
             shutil.copy2(path, bpath + ".part")
             os.replace(bpath + ".part", bpath)
 
@@ -885,7 +966,7 @@ class Worker:
                 song_mode, song_target = "volume", max(-40.0, target - bg_offset)
             elif choice != "default":
                 song_mode = choice
-            path = os.path.join(self.music, name)
+            path = self.path_of(name)
             # Fine as is: the song as it stands is already within half a dB of
             # its target with peaks under the ceiling, exactly what the page
             # shows as "Fine as is". Leave it alone, however it got there.
@@ -958,10 +1039,8 @@ class Worker:
         choices = read_json(os.path.join(self.data, "choices.json"), {})
         since = float(self.req.get("since") or 0)
         out = []
-        for name in sorted(os.listdir(self.music)):
-            path = os.path.join(self.music, name)
-            if not safe_name(name) or not os.path.isfile(path):
-                continue
+        for name in self.all_media():
+            path = self.path_of(name)
             if choices.get(name) == "skip":
                 continue
             st = os.stat(path)
@@ -1013,7 +1092,7 @@ class Worker:
                 continue
             if not self.wait_for_idle(name):
                 break
-            path = os.path.join(self.music, name)
+            path = self.path_of(name)
             shutil.copy2(bpath, path + ".restoring")
             os.replace(path + ".restoring", path)
             self.leveled.pop(name, None)
@@ -1036,7 +1115,11 @@ class Worker:
         return set(k for k, v in gains.items() if isinstance(v, dict) and v.get("source") == "AudioLeveler")
 
     def files_requested_or_backups(self):
-        have = sorted(set(f for f in os.listdir(self.backups) if safe_name(f)) | self.our_gains())
+        have = set(f for f in os.listdir(self.backups) if safe_name(f))
+        vb = os.path.join(self.backups, "videos")
+        if os.path.isdir(vb):
+            have |= set(VIDEO_PREFIX + f for f in os.listdir(vb) if safe_name(VIDEO_PREFIX + f))
+        have = sorted(have | self.our_gains())
         want = self.req.get("files", "all")
         if want == "all" or not isinstance(want, list):
             return have
@@ -1081,6 +1164,7 @@ def main():
     ap = argparse.ArgumentParser(description="FPP Audio Leveler worker")
     ap.add_argument("command", choices=("analyze", "level", "restore", "auto"))
     ap.add_argument("--music", help="FPP music folder (auto: taken from auto.json)")
+    ap.add_argument("--videos", help="FPP videos folder; videos are left out without it")
     ap.add_argument("--data", required=True, help="plugindata folder for this plugin")
     ap.add_argument("--log", help="log file (defaults to stderr)")
     ap.add_argument("--request", help="JSON file with the job options")
@@ -1093,6 +1177,7 @@ def main():
         if not auto_settings.get("enabled"):
             return 0
         args.music = args.music or auto_settings.get("music")
+        args.videos = args.videos or auto_settings.get("videos")
         args.log = args.log or auto_settings.get("log")
     if not args.music:
         ap.error("--music is required")

@@ -8,6 +8,7 @@
     var selected = {};
     var pollTimer = null;
     var lastJobState = null;
+    var pgVideos = false;      // ...and to a video's sound too
     var pgSupported = false;   // this FPP applies playback gain (File Manager > Normalize exists)
     var shown = [];          // songs currently listed, after filter/search/sort
     var filter = 'all';
@@ -105,6 +106,7 @@
 
     // What leveling would do to this song now: {text, note, rec}
     function planFor(f) {
+        if (f.noAudio) { return { text: 'Nothing to level', note: '' }; }
         if (!hasLufs(f)) { return { text: 'Measure first', note: '' }; }
         // Every song starts on Recommended ('default'); an older saved
         // 'auto' choice means the same thing.
@@ -114,7 +116,7 @@
         var I = f.lufs, TP = (f.peak === null || f.peak === undefined) ? null : f.peak;
         // On an FPP with playback gain, volume-only fixes go there: exact and
         // lossless for every format, no lossless-step rounding.
-        var playback = pgSupported && options.playbackGain !== false;
+        var playback = pgSupported && options.playbackGain !== false && (!f.video || pgVideos);
         var mp3Lossless = !playback && /\.mp3$/i.test(f.name) && options.lossless !== false;
         var note = [];
         if (f.lra !== null && f.lra !== undefined && f.lra > WIDE_DYNAMICS_LU && mode !== 'compress') {
@@ -220,7 +222,8 @@
             waitIdle: $id('alWaitIdle').checked,
             lossless: $id('alLossless').checked,
             autoLevel: $id('alAutoLevel').checked,
-            playbackGain: $id('alPlaybackGain').checked
+            playbackGain: $id('alPlaybackGain').checked,
+            videos: $id('alVideos').checked
         };
     }
 
@@ -246,6 +249,7 @@
         $id('alAutoLevel').checked = !!o.autoLevel;
         $id('alMatch').value = o.match === 'lufs' ? 'lufs' : 'speakers';
         $id('alPlaybackGain').checked = o.playbackGain !== false;
+        $id('alVideos').checked = o.videos !== false;
         var bg = String(Number(o.bgOffset || 10));
         var bs = $id('alBgOffset');
         if (!Array.prototype.some.call(bs.options, function (op) { return op.value === bg; })) {
@@ -260,7 +264,7 @@
         var o = readOptions();
         options = o;
         renderRows();
-        api('POST', 'options', o).catch(function (e) { toast(e.message, false); });
+        return api('POST', 'options', o).catch(function (e) { toast(e.message, false); });
     }
 
     /* ---------------- songs table ---------------- */
@@ -293,7 +297,7 @@
         if (f.leveled) {
             var l = f.leveled;
             return '<span class="badge text-bg-success">Leveled</span> <span class="small text-body-secondary">' +
-                esc(l.target + ' LUFS, ' + (l.method === 'playback' ? 'playback gain ' + dB(f.pbGain || l.gain)
+                esc((Math.round(l.target * 10) / 10) + ' LUFS, ' + (l.method === 'playback' ? 'playback gain ' + dB(f.pbGain || l.gain)
                     : l.method === 'lossless' ? 'lossless'
                     : l.method === 'original' ? 'original kept'
                     : (MODE_NAMES[l.mode] || l.mode) + ', re-encoded')) + '</span>';
@@ -303,6 +307,9 @@
         }
         if (!f.measured) {
             return '<span class="small text-body-secondary">Not measured yet</span>';
+        }
+        if (f.noAudio) {
+            return '<span class="small text-body-secondary">No sound track</span>';
         }
         return '<span class="small text-body-secondary">Original</span>';
     }
@@ -371,6 +378,12 @@
             '<div class="al-meter-target" style="left:' + pos(intendedTarget(f)).toFixed(1) + '%"></div></div>';
     }
 
+    // A video shows by its file name, marked as a video.
+    function displayName(f) { return f.video ? f.name.slice(7) : f.name; }
+    function songName(f) {
+        return esc(displayName(f)) + (f.video ? ' <span class="badge text-bg-secondary fw-normal">video</span>' : '');
+    }
+
     // Sort songs by title, not raw file name: skip a leading track number
     // ("01 - ", "13 ", "07."), ignore case, and order numbers naturally.
     // A name that merely starts with a digit (like "2WEI ...") is left alone.
@@ -379,7 +392,7 @@
     }
 
     function byTitle(a, b) {
-        return titleKey(a.name).localeCompare(titleKey(b.name), undefined, { sensitivity: 'base', numeric: true }) ||
+        return titleKey(displayName(a)).localeCompare(titleKey(displayName(b)), undefined, { sensitivity: 'base', numeric: true }) ||
             a.name.localeCompare(b.name, undefined, { numeric: true });
     }
 
@@ -393,7 +406,8 @@
                 case 'leveled': return !!f.leveled;
                 case 'replaced': return !!f.changedSinceLeveled;
                 case 'custom': return !!f.choice && f.choice !== 'default' && f.choice !== 'auto';
-                case 'unmeasured': return !hasLufs(f);
+                case 'unmeasured': return !f.measured || (!hasLufs(f) && !f.noAudio);
+                case 'videos': return !!f.video;
                 default: return true;
             }
         });
@@ -464,7 +478,7 @@
             var r = raw(f);
             if (r.TP === null) { return; }
             var t = ceiling - r.TP + r.I - speakerDelta(f);
-            if (t < limit) { limit = t; by = f.name; }
+            if (t < limit) { limit = t; by = displayName(f); }
         });
         $id('alAdvisorNote').textContent = isFinite(limit)
             ? 'Up to ' + (Math.floor(limit * 2) / 2).toFixed(1) + ' LUFS, every show song lands right on its target with a plain volume change' +
@@ -494,7 +508,7 @@
                 return '<tr' + (selected[f.name] ? ' class="table-active"' : '') + '>' +
                     '<td class="text-center"><input class="form-check-input al-sel" type="checkbox" data-i="' + i + '"' +
                     (selected[f.name] ? ' checked' : '') + ' aria-label="Select ' + esc(f.name) + '"></td>' +
-                    '<td class="text-break al-song">' + esc(f.name) +
+                    '<td class="text-break al-song">' + songName(f) +
                     '<div class="d-lg-none mt-1">' + statusHtml(f) + '</div>' +
                     '<div class="d-lg-none mt-1 al-fix-cell">' + fixHtml(f, i) + '</div>' +
                     (restore ? '<div class="d-sm-none mt-1">' + restore + '</div>' : '') + '</td>' +
@@ -563,10 +577,23 @@
         });
     }
 
+    function setFilter(name) {
+        filter = name;
+        Array.prototype.forEach.call($id('alFilters').querySelectorAll('[data-filter]'), function (x) {
+            var on = x.getAttribute('data-filter') === name;
+            x.classList.toggle('active', on);
+            x.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+    }
+
     function loadFiles() {
         return api('GET', 'files').then(function (j) {
             files = j.files || [];
             pgSupported = !!j.playbackGainSupported;
+            pgVideos = !!j.playbackGainVideos;
+            var anyVideos = files.some(function (f) { return f.video; });
+            $id('alFilterVideos').classList.toggle('d-none', !anyVideos);
+            if (!anyVideos && filter === 'videos') { setFilter('all'); }
             $id('alPlaybackGainRow').classList.toggle('d-none', !pgSupported);
             // Show what each song will actually sound like: its own loudness
             // plus any playback gain fppd applies to it.
@@ -743,6 +770,7 @@
         $id('alWaitIdle').addEventListener('change', saveOptions);
         $id('alLossless').addEventListener('change', saveOptions);
         $id('alPlaybackGain').addEventListener('change', saveOptions);
+        $id('alVideos').addEventListener('change', function () { saveOptions().then(loadFiles); });
         $id('alAutoLevel').addEventListener('change', function () {
             saveOptions();
             // Switched on: look for new songs straight away.
@@ -803,11 +831,7 @@
         $id('alFilters').addEventListener('click', function (e) {
             var b = e.target.closest('[data-filter]');
             if (!b) { return; }
-            filter = b.getAttribute('data-filter');
-            Array.prototype.forEach.call(this.querySelectorAll('[data-filter]'), function (x) {
-                x.classList.toggle('active', x === b);
-                x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
-            });
+            setFilter(b.getAttribute('data-filter'));
             renderRows();
         });
         $id('alSearch').addEventListener('input', function () {
