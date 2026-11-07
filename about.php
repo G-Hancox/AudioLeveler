@@ -70,11 +70,18 @@
                so a whole library can take a few hours. Measuring alone is quicker. It's safe to start a big job and leave it running overnight;
                it waits for shows and you can close the browser. Speed doesn't affect quality.</p>
 
+            <h6 class="fw-semibold">Automatic leveling</h6>
+            <p>Switch on <b>Level new and replaced songs automatically</b> and songs you add or change afterwards, such as uploads from xLights,
+               are measured and given their fix without you opening this page. It checks when FPP starts, whenever a playlist stops,
+               and when you open this page, and does the work only once no show is playing. Songs set to Skip are left alone, a file
+               that changed in the last minute (probably still uploading) waits for the next check, and songs that were already there
+               when you switched it on are left for you to level here. It's off until you switch it on.</p>
+
             <h6 class="fw-semibold">Uploading a song again</h6>
             <p>If you upload a song again with the same name (for example after fixing a sequence, or when xLights' FPP Connect sends the audio
                along with a sequence), the new upload <b>replaces the leveled copy</b>. Audio Leveler notices: the song shows
                <span class="badge text-bg-warning">Replaced since leveling</span> and appears under the <b>Replaced</b> filter.
-               Level it again and it's back on target; the new upload becomes the new original for backups.</p>
+               Level it again and it's back on target, or switch on automatic leveling to have it done for you. The new upload becomes the new original for backups.</p>
 
             <h6 class="fw-semibold">Audio Leveler or FPP's Normalize?</h6>
             <p>Newer FPP versions have a <b>Normalize</b> button in File Manager that adjusts each song's volume during playback without changing the file.

@@ -187,7 +187,8 @@
             bgOffset: parseFloat($id('alBgOffset').value) || 10,
             backup: $id('alBackup').checked,
             waitIdle: $id('alWaitIdle').checked,
-            lossless: $id('alLossless').checked
+            lossless: $id('alLossless').checked,
+            autoLevel: $id('alAutoLevel').checked
         };
     }
 
@@ -210,6 +211,7 @@
         $id('alBackup').checked = !!o.backup;
         $id('alWaitIdle').checked = !!o.waitIdle;
         $id('alLossless').checked = o.lossless !== false;
+        $id('alAutoLevel').checked = !!o.autoLevel;
         var bg = String(Number(o.bgOffset || 10));
         var bs = $id('alBgOffset');
         if (!Array.prototype.some.call(bs.options, function (op) { return op.value === bg; })) {
@@ -237,7 +239,7 @@
         return 'text-danger';
     }
 
-    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring' };
+    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new songs' };
 
     function statusHtml(f) {
         var clip = f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0
@@ -299,7 +301,7 @@
         // While a job runs these totals are a mix of old and new numbers, so
         // grey them out and say so, rather than let them look final.
         var stale = busy();
-        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring' }[jobProgress.cmd] || 'Working';
+        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new songs' }[jobProgress.cmd] || 'Working';
         el.innerHTML =
             (stale ? '<div class="col-12 small text-body-secondary">' +
                 '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
@@ -432,6 +434,16 @@
         all.indeterminate = shownSel > 0 && shownSel < shown.length;
     }
 
+    // If automatic leveling is on, look for new or replaced songs now (the
+    // worker exits at once when there are none). A job it starts shows up in
+    // the progress bar through the normal polling.
+    function autoCheck() {
+        if (!options || !options.autoLevel || busy()) { return; }
+        api('POST', 'autocheck').then(function (j) {
+            if (j.started) { setTimeout(poll, 1500); }
+        }).catch(function () {});
+    }
+
     // Save how the given songs should be leveled, and show the new plan at once.
     function setChoice(names, choice) {
         if (!names.length) { return; }
@@ -466,7 +478,7 @@
 
     /* ---------------- jobs ---------------- */
 
-    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring' };
+    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new songs' };
 
     function showJob(j) {
         var state = j.state || null;
@@ -522,7 +534,7 @@
     function showResult(j) {
         var res = j.results || [];
         var bad = res.filter(function (r) { return !r.ok; });
-        var verb = { analyze: 'Measured', level: 'Leveled', restore: 'Restored' }[j.cmd] || 'Finished';
+        var verb = { analyze: 'Measured', level: 'Leveled', restore: 'Restored', auto: 'Auto-leveled' }[j.cmd] || 'Finished';
         var head;
         var cls = 'alert-success';
         if (j.state === 'cancelled') {
@@ -531,7 +543,9 @@
             head = 'Stopped after ' + doneN + (total ? ' of ' + total : '') + ' song' + (doneN === 1 ? '' : 's') + '. ' +
                 (doneN ? 'The ' + (doneN === 1 ? 'one' : doneN) + ' finished ' + (doneN === 1 ? 'is' : 'are') + ' saved' : 'Nothing was changed') +
                 (j.stoppedAt ? '; ' + j.stoppedAt + ' was left as it was' : '') + '.' +
-                (total && doneN < total && j.cmd !== 'restore'
+                (total && doneN < total && j.cmd === 'auto'
+                    ? ' The rest are picked up at the next automatic check.'
+                    : total && doneN < total && j.cmd !== 'restore'
                     ? ' Press ' + again + ' again to carry on with the rest; finished songs are skipped.' : '');
             cls = 'alert-secondary';
         } else if (j.state === 'error') {
@@ -596,6 +610,11 @@
         $id('alBackup').addEventListener('change', saveOptions);
         $id('alWaitIdle').addEventListener('change', saveOptions);
         $id('alLossless').addEventListener('change', saveOptions);
+        $id('alAutoLevel').addEventListener('change', function () {
+            saveOptions();
+            // Switched on: look for new songs straight away.
+            if (this.checked) { setTimeout(autoCheck, 800); }
+        });
         $id('alBgOffset').addEventListener('change', saveOptions);
 
         $id('alRows').addEventListener('change', function (e) {
@@ -711,7 +730,8 @@
         api('GET', 'options').then(function (j) { showOptions(j.options); })
             .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'auto', backup: true, waitIdle: true, lossless: true, bgOffset: 10 }); })
             .then(loadFiles)
-            .then(poll);
+            .then(poll)
+            .then(autoCheck);
     }
 
     if (document.readyState === 'loading') {

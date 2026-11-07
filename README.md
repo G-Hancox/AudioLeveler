@@ -45,12 +45,22 @@ The status column shows which path each song took.
 3. Press **Level all**, or tick songs and press **Level selected**.
 4. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
 
+## Automatic leveling
+
+With **Level new and replaced songs automatically** switched on, which is off by default, songs added or changed afterwards are measured and given their fix with no page visit needed. That covers re-uploads from xLights' FPP Connect, which would otherwise undo leveling. The plugin checks:
+
+- when fppd starts (`lifecycle` callback),
+- when a playlist stops (`playlist` callback, `Action: stop` only; the per-item `playing` calls are ignored),
+- when the Audio Leveler page opens.
+
+Each check is a quick file comparison run by `bin/auto_check.sh`, which returns at once: fppd waits for callbacks. At most one check runs a minute. Work starts only if there are new songs, runs in the background at low priority, and waits until no show is playing. Songs set to Skip are left alone. A file changed in the last minute (likely still uploading) waits for the next check. Songs that were already there when it was switched on are left for you to level from the page.
+
 ## Good to know
 
 - **Clipping it can and can't fix.** Leveling brings every peak under the ceiling, so nothing goes over full scale when it plays. Distortion that was recorded or mastered into a song can't be removed by any leveling tool.
 
 - **Leveling is slow on a Pi.** Each song is measured, re-encoded and checked again, which often takes a minute or more per song, so a whole library can take a few hours. It's safe to leave a big job running overnight, because it waits for shows and keeps going with the browser closed. Speed doesn't affect quality.
-- **Uploading a song again replaces the leveled copy.** This includes re-uploading after fixing a sequence, or xLights' FPP Connect sending the audio along with a sequence. The plugin flags the song as *Replaced since leveling* (there's a **Replaced** filter for it). Level it again to bring it back on target. The new upload becomes the new original for backups.
+- **Uploading a song again replaces the leveled copy** (unless automatic leveling is on). This includes re-uploading after fixing a sequence, or xLights' FPP Connect sending the audio along with a sequence. The plugin flags the song as *Replaced since leveling* (there's a **Replaced** filter for it). Level it again to bring it back on target. The new upload becomes the new original for backups.
 
 ## Requirements
 
@@ -69,6 +79,7 @@ Audio Leveler rewrites the files instead (losslessly for MP3s that only need a v
 | `content.php`, `assets/audioleveler.js` | The Content Setup page |
 | `api.php` | `/api/plugin/AudioLeveler/...` endpoints |
 | `bin/leveler.py` | Background worker that runs ffmpeg |
+| `bin/auto_check.sh`, `callbacks.sh` | Automatic leveling triggers (fppd start, playlist stop) |
 | `bin/mp3lossless.py` | Lossless MP3 volume change (frame `global_gain` edit, as MP3Gain does) |
 | `commands/start_job.sh` | FPP command "Audio Leveler: Start Job": the page asks fppd to run it, and it starts the worker. On its own it does nothing. |
 | `callbacks.sh` | Lets fppd load the plugin without a restart, and asks a running job to stop after its current song when fppd stops or unloads the plugin |

@@ -35,6 +35,7 @@ function getEndpointsAudioLeveler()
         array('method' => 'POST', 'endpoint' => 'options', 'callback' => 'AudioLevelerSetOptions'),
         array('method' => 'DELETE', 'endpoint' => 'backups', 'callback' => 'AudioLevelerDeleteBackups'),
         array('method' => 'POST', 'endpoint' => 'choice', 'callback' => 'AudioLevelerSetChoice'),
+        array('method' => 'POST', 'endpoint' => 'autocheck', 'callback' => 'AudioLevelerAutoCheck'),
     );
 }
 
@@ -50,6 +51,7 @@ function AudioLevelerDefaults()
         'backup' => true,
         'waitIdle' => true,
         'lossless' => true,  // change MP3 volume losslessly when no limiting is needed
+        'autoLevel' => false, // level new and replaced songs automatically
     );
 }
 
@@ -442,9 +444,56 @@ function AudioLevelerSetOptions()
         if (is_bool($v)) {
             $val = $val ? '1' : '0';
         }
+        // Automatic leveling only handles songs added or changed after it was
+        // switched on, so switching it on never sweeps a whole library.
+        if ($k === 'autoLevel' && $val === '1' && !AudioLevelerOptions()['autoLevel']) {
+            WriteSettingToFile('AudioLeveler_autoSince', (string) time(), AUDIOLEVELER_PLUGIN);
+        }
         WriteSettingToFile('AudioLeveler_' . $k, (string) $val, AUDIOLEVELER_PLUGIN);
     }
+    AudioLevelerWriteAutoSettings();
     return json(array('status' => 'OK', 'options' => AudioLevelerOptions()));
+}
+
+// The settings automatic leveling uses, for the worker started from fppd's
+// callbacks (which can't read the page's settings): plugindata/.../auto.json.
+function AudioLevelerWriteAutoSettings()
+{
+    $opt = AudioLevelerOptions();
+    $auto = array(
+        'enabled' => (bool) $opt['autoLevel'],
+        'target' => max(-30, min(-6, floatval($opt['target']))),
+        'ceiling' => max(-6, min(0, floatval($opt['ceiling']))),
+        'bgOffset' => max(3, min(30, floatval($opt['bgOffset']))),
+        'lossless' => (bool) $opt['lossless'],
+        'backup' => (bool) $opt['backup'],
+        'since' => intval(ReadSettingFromFile('AudioLeveler_autoSince', AUDIOLEVELER_PLUGIN)),
+        'music' => AudioLevelerMusicDir(),
+        'log' => AudioLevelerLogFile(),
+    );
+    $path = AudioLevelerDataDir() . '/auto.json';
+    $json = json_encode($auto, JSON_PRETTY_PRINT);
+    if (!file_exists($path) || @file_get_contents($path) !== $json) {
+        @file_put_contents($path . '.tmp', $json);
+        @rename($path . '.tmp', $path);
+    }
+}
+
+// POST /api/plugin/AudioLeveler/autocheck
+// The page asks for a check when it opens. Does nothing unless automatic
+// leveling is on; returns at once (the worker finds and levels new songs in
+// the background, waiting for any show to end).
+function AudioLevelerAutoCheck()
+{
+    global $settings;
+    AudioLevelerWriteAutoSettings();
+    if (!AudioLevelerOptions()['autoLevel'] || AudioLevelerBusy()) {
+        return json(array('status' => 'OK', 'started' => false));
+    }
+    $script = __DIR__ . '/bin/auto_check.sh';
+    exec('MEDIADIR=' . escapeshellarg(rtrim($settings['mediaDirectory'], '/')) . ' ' .
+        escapeshellarg($script) . ' > /dev/null 2>&1');
+    return json(array('status' => 'OK', 'started' => true));
 }
 
 // DELETE /api/plugin/AudioLeveler/backups

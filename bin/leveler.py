@@ -754,6 +754,56 @@ class Worker:
         self.save_job(done=len(self.job.get("results", [])) if self.cancelled() else len(files),
                       stoppedAt="" if not self.cancelled() else self.job.get("current", ""))
 
+    # -- automatic leveling of new and replaced songs ---------------------
+
+    # A file that changed this recently may still be uploading; it's picked
+    # up by the next check instead.
+    AUTO_SETTLE_SECONDS = 60
+
+    def auto_candidates(self):
+        """
+        Songs uploaded or changed since automatic leveling was switched on,
+        that the plugin hasn't measured as they are now, and that aren't set to
+        Skip or still being uploaded. Songs that were already there when it was
+        switched on are left for you to level from the page.
+        """
+        choices = read_json(os.path.join(self.data, "choices.json"), {})
+        since = float(self.req.get("since") or 0)
+        out = []
+        for name in sorted(os.listdir(self.music)):
+            path = os.path.join(self.music, name)
+            if not safe_name(name) or not os.path.isfile(path):
+                continue
+            if choices.get(name) == "skip":
+                continue
+            st = os.stat(path)
+            if time.time() - st.st_mtime < self.AUTO_SETTLE_SECONDS:
+                continue
+            if st.st_mtime < since:
+                continue
+            a = self.analysis.get(name)
+            if a and same_sig(a, file_sig(path)):
+                continue
+            out.append(name)
+        return out
+
+    def cmd_auto(self):
+        files = self.req.get("files") or []
+        logging.info("Auto-leveling %d new or replaced song(s): %s", len(files), ", ".join(files[:10]) +
+                     (" ..." if len(files) > 10 else ""))
+        # Measure first (so 'fine as is' is judged on the new file), then level.
+        for i, name in enumerate(files):
+            if self.cancelled():
+                return
+            self.save_job(current=name, done=0, total=len(files))
+            try:
+                self.analyze_one(name, True)
+            except Cancelled:
+                return
+            except Exception as ex:
+                logging.warning("%s: could not measure: %s", name, ex)
+        self.cmd_level()
+
     def cmd_restore(self):
         files = [f for f in self.files_requested_or_backups()]
         self.save_job(total=len(files))
@@ -824,12 +874,24 @@ def main():
         sys.argv = [sys.argv[0]] + argv
 
     ap = argparse.ArgumentParser(description="FPP Audio Leveler worker")
-    ap.add_argument("command", choices=("analyze", "level", "restore"))
-    ap.add_argument("--music", required=True, help="FPP music folder")
+    ap.add_argument("command", choices=("analyze", "level", "restore", "auto"))
+    ap.add_argument("--music", help="FPP music folder (auto: taken from auto.json)")
     ap.add_argument("--data", required=True, help="plugindata folder for this plugin")
     ap.add_argument("--log", help="log file (defaults to stderr)")
     ap.add_argument("--request", help="JSON file with the job options")
     args = ap.parse_args()
+    auto_settings = None
+    if args.command == "auto":
+        # Started by a lifecycle/playlist callback or the page: the settings
+        # the page last saved live in auto.json. Off unless switched on there.
+        auto_settings = read_json(os.path.join(args.data, "auto.json"), {})
+        if not auto_settings.get("enabled"):
+            return 0
+        args.music = args.music or auto_settings.get("music")
+        args.log = args.log or auto_settings.get("log")
+    if not args.music:
+        ap.error("--music is required")
+    args.auto_settings = auto_settings
 
     log_problem = None
     try:
@@ -873,7 +935,16 @@ def run_job(args, log_problem):
             logging.error("%s not found", tool)
             return 1
 
-    Worker(args).run()
+    w = Worker(args)
+    if args.command == "auto":
+        w.req = dict(args.auto_settings)
+        if not w.req.get("since"):
+            return 0  # never switched on from the page
+        files = w.auto_candidates()
+        if not files:
+            return 0  # nothing new: leave the page's last job result alone
+        w.req = dict(args.auto_settings, files=files, waitIdle=True, mode="auto")
+    w.run()
     return 0
 
 

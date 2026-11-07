@@ -62,6 +62,14 @@
                         Used whenever a song only needs turning up or down. Songs that need the limiter or compression, and other formats,
                         are re-encoded at top quality (MP3 at 320 kbps).</div>
 
+                    <div class="form-check form-switch mb-1">
+                        <input class="form-check-input" type="checkbox" role="switch" id="alAutoLevel">
+                        <label class="form-check-label" for="alAutoLevel">Level new and replaced songs automatically</label>
+                    </div>
+                    <div class="form-text mb-3">Handles songs added or changed after you switch this on (an upload from xLights, say). It checks when FPP starts,
+                        whenever a playlist stops, and when you open this page, then measures them and applies each one's fix
+                        once no show is playing. Songs set to Skip are left alone, and a file that's still uploading waits for the next check.</div>
+
                     <div class="form-check form-switch mb-2">
                         <input class="form-check-input" type="checkbox" role="switch" id="alBackup">
                         <label class="form-check-label" for="alBackup">Keep the original of each song so it can be restored</label>
