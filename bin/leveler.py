@@ -152,9 +152,41 @@ def safe_name(name):
 # ffmpeg wrappers
 
 
+class Cancelled(Exception):
+    """The user pressed Cancel; stop the current song right away."""
+
+
+# Set by the worker: a file whose appearance means "cancel now".
+CANCEL_FILE = None
+
+
 def run(cmd, timeout=None):
-    return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          universal_newlines=True, timeout=timeout)
+    """
+    Run a command and collect its output, but stop it within half a second if
+    the user cancels: a song can take minutes, and Cancel should not have to
+    wait for it. Stopping is always safe: measuring only reads, and leveling
+    writes to a temporary file that is only swapped in after it's checked.
+    """
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         universal_newlines=True)
+    started = time.time()
+    out_parts, err_parts = [], []
+    while True:
+        try:
+            out, err = p.communicate(timeout=0.5)
+            out_parts.append(out or "")
+            err_parts.append(err or "")
+            break
+        except subprocess.TimeoutExpired:
+            if (CANCEL_FILE and os.path.exists(CANCEL_FILE)) or (
+                    timeout is not None and time.time() - started > timeout):
+                p.kill()
+                p.communicate()
+                if timeout is not None and time.time() - started > timeout and not (
+                        CANCEL_FILE and os.path.exists(CANCEL_FILE)):
+                    raise subprocess.TimeoutExpired(cmd, timeout)
+                raise Cancelled()
+    return subprocess.CompletedProcess(cmd, p.returncode, "".join(out_parts), "".join(err_parts))
 
 
 def probe(path):
@@ -328,6 +360,8 @@ class Worker:
         self.leveled_path = os.path.join(self.data, "leveled.json")
         self.job_path = os.path.join(self.data, "job.json")
         self.cancel_path = os.path.join(self.data, "cancel")
+        global CANCEL_FILE
+        CANCEL_FILE = self.cancel_path
         self.analysis = read_json(self.analysis_path, {})
         self.leveled = read_json(self.leveled_path, {})
         self.job = read_json(self.job_path, {})
@@ -432,9 +466,13 @@ class Worker:
                 e = self.analyze_one(name, force)
                 self.result(name, True, "%.1f LUFS, peak %.1f dBTP" % (e["I"], e["TP"])
                             if e.get("I") is not None else "silent")
+            except Cancelled:
+                break
             except Exception as ex:
                 self.result(name, False, str(ex))
-        self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
+            self.save_job(done=i + 1)
+        self.save_job(done=len(self.job.get("results", [])) if self.cancelled() else len(files),
+                      stoppedAt="" if not self.cancelled() else self.job.get("current", ""))
 
     def plan_gain(self, I, TP, target, ceiling, mode):
         """Gain in dB, and whether a limiter is needed to keep peaks under the ceiling."""
@@ -658,14 +696,34 @@ class Worker:
                 song_mode, song_target = "volume", max(-40.0, target - bg_offset)
             elif choice != "default":
                 song_mode = choice
+            # Already leveled with exactly these settings (say, before a job
+            # was cancelled): nothing to redo, so carry on where it stopped.
+            rec = self.leveled.get(name)
+            path = os.path.join(self.music, name)
+            if (rec and os.path.exists(path) and same_sig(rec, file_sig(path))
+                    and rec.get("asked") == song_mode and rec.get("target") == song_target
+                    and rec.get("ceiling") == ceiling
+                    and rec.get("losslessOpt", True) == bool(self.req.get("lossless", True))):
+                self.result(name, True, "already leveled with these settings")
+                self.save_job(done=i + 1)
+                continue
             try:
                 ok, msg = self.level_one(name, song_target, ceiling, song_mode, keep)
                 if ok and choice == "background":
                     msg += " (background, %g dB under the show)" % bg_offset
+                if ok and name in self.leveled and self.leveled[name].get("at") and (
+                        same_sig(self.leveled[name], file_sig(path))):
+                    self.leveled[name]["asked"] = song_mode
+                    self.leveled[name]["losslessOpt"] = bool(self.req.get("lossless", True))
+                    write_json(self.leveled_path, self.leveled)
+            except Cancelled:
+                break
             except Exception as ex:
                 ok, msg = False, str(ex)
             self.result(name, ok, msg)
-        self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
+            self.save_job(done=i + 1)
+        self.save_job(done=len(self.job.get("results", [])) if self.cancelled() else len(files),
+                      stoppedAt="" if not self.cancelled() else self.job.get("current", ""))
 
     def cmd_restore(self):
         files = [f for f in self.files_requested_or_backups()]
@@ -710,6 +768,9 @@ class Worker:
             getattr(self, "cmd_" + self.cmd)()
             state = "cancelled" if self.cancelled() else "done"
             self.save_job(state=state, current="", message="", finished=now())
+        except Cancelled:
+            self.save_job(state="cancelled", current="", message="",
+                          done=len(self.job.get("results", [])), finished=now())
         except Exception as ex:
             logging.exception("Job failed")
             self.save_job(state="error", message=str(ex), finished=now())

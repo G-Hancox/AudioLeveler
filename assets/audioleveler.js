@@ -16,6 +16,7 @@
     var lastDone = -1;       // songs finished at the last poll, to refresh the list as each one completes
     var workingOn = '';      // song the running job is on right now
     var workingCmd = '';
+    var jobProgress = { cmd: '', done: 0, total: 0 };   // for the "totals are updating" note
     var deleteArmed = false;
 
     function $id(id) { return document.getElementById(id); }
@@ -266,7 +267,9 @@
     function offTarget(f) { return hasLufs(f) && !!options && Math.abs(f.lufs - options.target) > 1; }
 
     function stat(value, label, cls) {
-        return '<div class="col-6 col-md-3"><div class="h-100 border rounded bg-body-tertiary px-3 py-2">' +
+        // Greyed out while a job is running: the totals are mid-update.
+        return '<div class="col-6 col-md-3"><div class="h-100 border rounded bg-body-tertiary px-3 py-2' +
+            (busy() ? ' opacity-50' : '') + '">' +
             '<div class="fs-5 fw-semibold ' + (cls || '') + '">' + value + '</div>' +
             '<div class="small text-body-secondary">' + label + '</div></div></div>';
     }
@@ -289,7 +292,15 @@
         var clipN = measured.filter(clips).length;
         var offN = measured.filter(offTarget).length;
         var notM = files.length - measured.length;
+        // While a job runs these totals are a mix of old and new numbers, so
+        // grey them out and say so, rather than let them look final.
+        var stale = busy();
+        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring' }[jobProgress.cmd] || 'Working';
         el.innerHTML =
+            (stale ? '<div class="col-12 small text-body-secondary">' +
+                '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
+                esc(verb + '…' + (jobProgress.total ? ' ' + jobProgress.done + ' of ' + jobProgress.total + ' done.' : '') +
+                    ' These totals will update when it finishes.') + '</div>' : '') +
             stat(files.length, notM ? notM + ' not measured yet' : 'songs, all measured') +
             stat(spread, esc(spreadLbl), spreadCls) +
             stat(clipN, 'clipping', clipN ? 'text-danger' : 'text-success') +
@@ -461,6 +472,8 @@
             box.classList.remove('d-none');
             $id('alResult').classList.add('d-none');
             var total = j.total || 0, done = j.done || 0;
+            jobProgress = { cmd: j.cmd || jobProgress.cmd, done: done, total: total };
+            renderStats();
             var pct = total ? Math.round(100 * done / total) : 0;
             $id('alJobBar').style.width = pct + '%';
             var verb = CMD_NAMES[j.cmd] || 'Working';
@@ -487,6 +500,7 @@
         } else {
             box.classList.add('d-none');
             lastDone = -1;
+            renderStats();
             if (workingOn) {
                 workingOn = '';
                 renderRows();
@@ -507,7 +521,13 @@
         var head;
         var cls = 'alert-success';
         if (j.state === 'cancelled') {
-            head = 'Stopped. ' + (res.length - bad.length) + ' song(s) were finished before cancelling.';
+            var doneN = res.length, total = j.total || 0;
+            var again = { analyze: 'Measure songs', level: 'Level all (or Level selected)', restore: 'Restore originals' }[j.cmd] || 'it';
+            head = 'Stopped after ' + doneN + (total ? ' of ' + total : '') + ' song' + (doneN === 1 ? '' : 's') + '. ' +
+                (doneN ? 'The ' + (doneN === 1 ? 'one' : doneN) + ' finished ' + (doneN === 1 ? 'is' : 'are') + ' saved' : 'Nothing was changed') +
+                (j.stoppedAt ? '; ' + j.stoppedAt + ' was left as it was' : '') + '.' +
+                (total && doneN < total && j.cmd !== 'restore'
+                    ? ' Press ' + again + ' again to carry on with the rest; finished songs are skipped.' : '');
             cls = 'alert-secondary';
         } else if (j.state === 'error') {
             head = j.message || 'The job stopped with an error.';
@@ -543,7 +563,9 @@
     function start(path, body) {
         $id('alResult').classList.add('d-none');
         lastJobState = 'starting';
+        jobProgress = { cmd: path, done: 0, total: 0 };
         updateButtons();
+        renderStats();
         return api('POST', path, body).then(function () {
             setTimeout(poll, 500);
         }).catch(function (e) {
@@ -649,7 +671,7 @@
         });
         $id('alCancel').addEventListener('click', function () {
             api('POST', 'cancel').then(function () {
-                $id('alJobMsg').textContent = 'Stopping after the current song…';
+                $id('alJobMsg').textContent = 'Stopping…';
             });
         });
         $id('alDeleteBackups').addEventListener('click', function () {
