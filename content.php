@@ -103,13 +103,6 @@
                         are re-encoded at top quality (MP3 at 320 kbps).</div>
 
                     <div class="form-check form-switch mb-1">
-                        <input class="form-check-input" type="checkbox" role="switch" id="alVideos">
-                        <label class="form-check-label" for="alVideos">Include videos</label>
-                    </div>
-                    <div class="form-text mb-3">Lists the videos in FPP's videos folder alongside the songs, so their sound is leveled to match.
-                        Only the sound is touched: the picture is copied exactly as it is. A video without a sound track is left alone.</div>
-
-                    <div class="form-check form-switch mb-1">
                         <input class="form-check-input" type="checkbox" role="switch" id="alAutoLevel">
                         <label class="form-check-label" for="alAutoLevel">Level new and replaced songs automatically</label>
                     </div>
@@ -133,9 +126,20 @@
         <!-- Songs -->
         <div class="col-12 col-xl-8">
             <div class="card">
-                <div class="card-header d-flex flex-wrap gap-2 align-items-center">
-                    <span class="fw-semibold me-auto">Songs</span>
-                    <div class="d-flex gap-2">
+                <div class="card-header d-flex flex-wrap gap-2 align-items-end">
+                    <span id="alListTitle" class="visually-hidden">Songs</span>
+                    <!-- Songs and videos are separate lists; buttons act on the open tab -->
+                    <ul id="alTabs" class="nav nav-tabs card-header-tabs me-auto" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button id="alTabSongs" type="button" class="nav-link active" role="tab" aria-selected="true" data-tab="songs">
+                                Songs <span class="badge rounded-pill text-bg-secondary fw-normal">0</span></button>
+                        </li>
+                        <li id="alTabVideosItem" class="nav-item d-none" role="presentation">
+                            <button id="alTabVideos" type="button" class="nav-link" role="tab" aria-selected="false" data-tab="videos">
+                                Videos <span class="badge rounded-pill text-bg-secondary fw-normal">0</span></button>
+                        </li>
+                    </ul>
+                    <div class="d-flex gap-2 mb-1">
                         <button id="alMeasure" type="button" class="buttons btn btn-outline-secondary">Measure songs</button>
                         <button id="alLevelAll" type="button" class="buttons btn btn-success">Level all</button>
                     </div>
@@ -172,9 +176,8 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="replaced">Replaced</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="unmeasured">Not measured</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="custom">Custom fix</button>
-                            <button type="button" id="alFilterVideos" class="btn btn-sm btn-outline-secondary rounded-pill d-none" aria-pressed="false" data-filter="videos">Videos</button>
                         </div>
-                        <input id="alSearch" type="search" class="form-control form-control-sm w-auto ms-auto" placeholder="Search songs" aria-label="Search songs">
+                        <input id="alSearch" type="search" class="form-control form-control-sm w-auto ms-auto" placeholder="Search" aria-label="Search this list">
                     </div>
 
                     <!-- Selection bar: acts on the ticked songs -->
@@ -199,7 +202,7 @@
                             <thead>
                                 <tr>
                                     <th scope="col" class="text-center"><input id="alSelectAll" class="form-check-input" type="checkbox" aria-label="Select all shown songs"></th>
-                                    <th scope="col"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="name">Song <span class="al-sort-icon text-body-secondary"></span></button></th>
+                                    <th scope="col"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="name"><span id="alNameHead">Song</span> <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="text-end"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="lufs">Loudness <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="text-end d-none d-sm-table-cell"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="peak">Peak <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="d-none d-lg-table-cell">Status</th>

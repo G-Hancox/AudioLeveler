@@ -12,6 +12,22 @@
     var pgSupported = false;   // this FPP applies playback gain (File Manager > Normalize exists)
     var shown = [];          // songs currently listed, after filter/search/sort
     var filter = 'all';
+    // Songs and videos are two separate lists, one tab each: 'files' is the
+    // current tab's list, and every button acts on that tab only.
+    var allFiles = [];
+    var tab = 'songs';
+    try { if (localStorage.getItem('audioLeveler.tab') === 'videos') { tab = 'videos'; } } catch (e) { /* no storage */ }
+    function noun(n) { return tab === 'videos' ? (n === 1 ? 'video' : 'videos') : (n === 1 ? 'song' : 'songs'); }
+    function inTab(f) { return !!f.video === (tab === 'videos'); }
+    // A job's files by name ("videos/..." for videos): what to call them.
+    function jobNoun(names, n) {
+        var v = names.filter(function (x) { return String(x).indexOf('videos/') === 0; }).length;
+        var one = n === 1;
+        if (names.length && v === names.length) { return one ? 'video' : 'videos'; }
+        if (v) { return one ? 'file' : 'songs and videos'; }
+        return one ? 'song' : 'songs';
+    }
+    function shortName(name) { return String(name).replace(/^videos\//, ''); }
     var search = '';
     var sortKey = 'name';
     var sortDir = 1;
@@ -189,6 +205,7 @@
     }
 
     function fixHtml(f, i) {
+        if (f.noAudio) { return '<span class="small text-body-secondary">Nothing to level</span>'; }
         var choice = (!f.choice || f.choice === 'auto') ? 'default' : f.choice;
         var opts = Object.keys(CHOICE_NAMES).map(function (k) {
             var label = CHOICE_NAMES[k];
@@ -222,8 +239,7 @@
             waitIdle: $id('alWaitIdle').checked,
             lossless: $id('alLossless').checked,
             autoLevel: $id('alAutoLevel').checked,
-            playbackGain: $id('alPlaybackGain').checked,
-            videos: $id('alVideos').checked
+            playbackGain: $id('alPlaybackGain').checked
         };
     }
 
@@ -249,7 +265,6 @@
         $id('alAutoLevel').checked = !!o.autoLevel;
         $id('alMatch').value = o.match === 'lufs' ? 'lufs' : 'speakers';
         $id('alPlaybackGain').checked = o.playbackGain !== false;
-        $id('alVideos').checked = o.videos !== false;
         var bg = String(Number(o.bgOffset || 10));
         var bs = $id('alBgOffset');
         if (!Array.prototype.some.call(bs.options, function (op) { return op.value === bg; })) {
@@ -277,7 +292,7 @@
         return 'text-danger';
     }
 
-    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new songs' };
+    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new uploads' };
 
     function statusHtml(f) {
         var clip = f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0
@@ -331,7 +346,7 @@
     function renderStats() {
         var el = $id('alStats');
         if (!files.length) {
-            el.innerHTML = '<div class="col-12 text-body-secondary">No songs found in the music folder.</div>';
+            el.innerHTML = '<div class="col-12 text-body-secondary">No ' + noun(2) + ' found in the ' + (tab === 'videos' ? 'videos' : 'music') + ' folder.</div>';
             return;
         }
         var measured = files.filter(hasLufs);
@@ -345,21 +360,21 @@
             var hi = Math.max.apply(null, dev);
             spread = (hi - lo).toFixed(1) + ' <small class="fw-normal">dB</small>';
             spreadCls = hi - lo <= 2 ? 'text-success' : (hi - lo <= 6 ? 'text-warning-emphasis' : 'text-danger');
-            spreadLbl = 'spread of show songs' + (options.match === 'lufs' ? ', ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + ' LUFS' : ', speaker matched');
+            spreadLbl = 'spread of show ' + noun(2) + (options.match === 'lufs' ? ', ' + lo.toFixed(1) + ' to ' + hi.toFixed(1) + ' LUFS' : ', speaker matched');
         }
         var clipN = measured.filter(clips).length;
         var offN = measured.filter(offTarget).length;
-        var notM = files.length - measured.length;
+        var notM = files.filter(function (f) { return !f.measured; }).length;
         // While a job runs these totals are a mix of old and new numbers, so
         // grey them out and say so, rather than let them look final.
         var stale = busy();
-        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new songs' }[jobProgress.cmd] || 'Working';
+        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new uploads' }[jobProgress.cmd] || 'Working';
         el.innerHTML =
             (stale ? '<div class="col-12 small text-body-secondary">' +
                 '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
                 esc(verb + '…' + (jobProgress.total ? ' ' + jobProgress.done + ' of ' + jobProgress.total + ' done.' : '') +
                     ' These totals will update when it finishes.') + '</div>' : '') +
-            stat(files.length, notM ? notM + ' not measured yet' : 'songs, all measured') +
+            stat(files.length, notM ? notM + ' not measured yet' : noun(files.length) + ', all measured') +
             stat(spread, esc(spreadLbl), spreadCls) +
             stat(clipN, 'clipping', clipN ? 'text-danger' : 'text-success') +
             stat(offN, 'more than 1 dB off their target', offN ? 'text-warning-emphasis' : 'text-success');
@@ -381,7 +396,7 @@
     // A video shows by its file name, marked as a video.
     function displayName(f) { return f.video ? f.name.slice(7) : f.name; }
     function songName(f) {
-        return esc(displayName(f)) + (f.video ? ' <span class="badge text-bg-secondary fw-normal">video</span>' : '');
+        return esc(displayName(f));
     }
 
     // Sort songs by title, not raw file name: skip a leading track number
@@ -407,7 +422,6 @@
                 case 'replaced': return !!f.changedSinceLeveled;
                 case 'custom': return !!f.choice && f.choice !== 'default' && f.choice !== 'auto';
                 case 'unmeasured': return !f.measured || (!hasLufs(f) && !f.noAudio);
-                case 'videos': return !!f.video;
                 default: return true;
             }
         });
@@ -495,9 +509,9 @@
         var tb = $id('alRows');
         shown = visibleFiles();
         if (!files.length) {
-            tb.innerHTML = '<tr><td colspan="7" class="text-body-secondary py-3 text-center">No songs in the music folder.</td></tr>';
+            tb.innerHTML = '<tr><td colspan="7" class="text-body-secondary py-3 text-center">No ' + noun(2) + ' in the ' + (tab === 'videos' ? 'videos' : 'music') + ' folder.</td></tr>';
         } else if (!shown.length) {
-            tb.innerHTML = '<tr><td colspan="7" class="text-body-secondary py-3 text-center">No songs match this filter.</td></tr>';
+            tb.innerHTML = '<tr><td colspan="7" class="text-body-secondary py-3 text-center">No ' + noun(2) + ' match this filter.</td></tr>';
         } else {
             tb.innerHTML = shown.map(function (f, i) {
                 var lufs = hasLufs(f) ? f.lufs.toFixed(1) : '&ndash;';
@@ -541,11 +555,11 @@
         $id('alRestoreSel').disabled = b || !selWithBackup;
         $id('alSetFix').disabled = !sel.length;
         $id('alSelText').textContent = sel.length
-            ? sel.length + ' song' + (sel.length === 1 ? '' : 's') + ' selected' +
+            ? sel.length + ' ' + noun(sel.length) + ' selected' +
               (selWithBackup ? ' · ' + selWithBackup + ' with an original to restore' : '')
-            : 'No songs selected. Tick songs to level or restore just those.';
+            : 'No ' + noun(2) + ' selected. Tick ' + noun(2) + ' to level or restore just those.';
         $id('alClearSel').classList.toggle('d-none', !sel.length);
-        $id('alMeasure').textContent = sel.length ? 'Measure selected' : 'Measure songs';
+        $id('alMeasure').textContent = sel.length ? 'Measure selected' : 'Measure ' + noun(2);
         var all = $id('alSelectAll');
         var shownSel = shown.filter(function (f) { return selected[f.name]; }).length;
         all.checked = shown.length > 0 && shownSel === shown.length;
@@ -569,12 +583,30 @@
         renderRows();
         api('POST', 'choice', { files: names, choice: choice }).then(function () {
             if (names.length > 1) {
-                toast(names.length + ' songs set to ' + CHOICE_NAMES[choice] + '.');
+                toast(names.length + ' ' + noun(names.length) + ' set to ' + CHOICE_NAMES[choice] + '.');
             }
         }).catch(function (e) {
             toast(e.message, false);
             loadFiles();
         });
+    }
+
+    // Switch between the Songs and Videos lists. The selection and filter
+    // start fresh: each tab is its own list.
+    function setTab(name, quiet) {
+        tab = name;
+        try { localStorage.setItem('audioLeveler.tab', name); } catch (e) { /* no storage */ }
+        [['songs', 'alTabSongs'], ['videos', 'alTabVideos']].forEach(function (t) {
+            var on = t[0] === name;
+            $id(t[1]).classList.toggle('active', on);
+            $id(t[1]).setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        $id('alListTitle').textContent = name === 'videos' ? 'Videos' : 'Songs';
+        $id('alNameHead').textContent = name === 'videos' ? 'Video' : 'Song';
+        selected = {};
+        setFilter('all');
+        files = allFiles.filter(inTab);
+        if (!quiet) { renderRows(); updateButtons(); }
     }
 
     function setFilter(name) {
@@ -588,16 +620,19 @@
 
     function loadFiles() {
         return api('GET', 'files').then(function (j) {
-            files = j.files || [];
+            allFiles = j.files || [];
             pgSupported = !!j.playbackGainSupported;
             pgVideos = !!j.playbackGainVideos;
-            var anyVideos = files.some(function (f) { return f.video; });
-            $id('alFilterVideos').classList.toggle('d-none', !anyVideos);
-            if (!anyVideos && filter === 'videos') { setFilter('all'); }
+            var nVideos = allFiles.filter(function (f) { return f.video; }).length;
+            $id('alTabSongs').querySelector('.badge').textContent = allFiles.length - nVideos;
+            $id('alTabVideos').querySelector('.badge').textContent = nVideos;
+            $id('alTabVideosItem').classList.toggle('d-none', !nVideos);
+            if (!nVideos && tab === 'videos') { setTab('songs', true); }
+            files = allFiles.filter(inTab);
             $id('alPlaybackGainRow').classList.toggle('d-none', !pgSupported);
             // Show what each song will actually sound like: its own loudness
             // plus any playback gain fppd applies to it.
-            files.forEach(function (f) {
+            allFiles.forEach(function (f) {
                 if (f.pbGain !== undefined && f.measured && f.lufs !== null && f.lufs !== undefined) {
                     f.rawLufs = f.lufs;
                     f.lufs = f.lufs + f.pbGain;
@@ -622,7 +657,7 @@
 
     /* ---------------- jobs ---------------- */
 
-    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new songs' };
+    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new uploads' };
 
     function showJob(j) {
         var state = j.state || null;
@@ -640,7 +675,7 @@
             var verb = CMD_NAMES[j.cmd] || 'Working';
             var txt = state === 'starting' ? 'Starting…'
                 : verb + ' ' + (total ? (Math.min(done + 1, total)) + ' of ' + total : '') +
-                  (j.current ? ': ' + j.current : '');
+                  (j.current ? ': ' + shortName(j.current) : '');
             $id('alJobText').textContent = txt;
             $id('alJobMsg').textContent = j.message || '';
             $id('alJobBar').classList.toggle('bg-warning', state === 'waiting');
@@ -677,32 +712,33 @@
 
     function showResult(j) {
         var res = j.results || [];
+        var names = res.map(function (r) { return r.file; });
         var bad = res.filter(function (r) { return !r.ok; });
         var verb = { analyze: 'Measured', level: 'Leveled', restore: 'Restored', auto: 'Auto-leveled' }[j.cmd] || 'Finished';
         var head;
         var cls = 'alert-success';
         if (j.state === 'cancelled') {
             var doneN = res.length, total = j.total || 0;
-            var again = { analyze: 'Measure songs', level: 'Level all (or Level selected)', restore: 'Restore originals' }[j.cmd] || 'it';
-            head = 'Stopped after ' + doneN + (total ? ' of ' + total : '') + ' song' + (doneN === 1 ? '' : 's') + '. ' +
+            var again = { analyze: 'Measure ' + jobNoun(names, 2), level: 'Level all (or Level selected)', restore: 'Restore originals' }[j.cmd] || 'it';
+            head = 'Stopped after ' + doneN + (total ? ' of ' + total : '') + ' ' + jobNoun(names, doneN) + '. ' +
                 (doneN ? 'The ' + (doneN === 1 ? 'one' : doneN) + ' finished ' + (doneN === 1 ? 'is' : 'are') + ' saved' : 'Nothing was changed') +
-                (j.stoppedAt ? '; ' + j.stoppedAt + ' was left as it was' : '') + '.' +
+                (j.stoppedAt ? '; ' + shortName(j.stoppedAt) + ' was left as it was' : '') + '.' +
                 (total && doneN < total && j.cmd === 'auto'
                     ? ' The rest are picked up at the next automatic check.'
                     : total && doneN < total && j.cmd !== 'restore'
-                    ? ' Press ' + again + ' again to carry on with the rest; finished songs are skipped.' : '');
+                    ? ' Press ' + again + ' again to carry on with the rest; finished ones are skipped.' : '');
             cls = 'alert-secondary';
         } else if (j.state === 'error') {
             head = j.message || 'The job stopped with an error.';
             cls = 'alert-danger';
         } else {
-            head = verb + ' ' + (res.length - bad.length) + ' song' + (res.length - bad.length === 1 ? '' : 's') + '.';
+            head = verb + ' ' + (res.length - bad.length) + ' ' + jobNoun(names, res.length - bad.length) + '.';
             if (bad.length) { cls = 'alert-warning'; }
         }
         var html = '<div class="alert ' + cls + ' mb-0" role="status"><div>' + esc(head) + '</div>';
         if (bad.length) {
             html += '<div class="mt-1">' + bad.length + ' had a problem:</div><ul class="mb-0">' +
-                bad.slice(0, 20).map(function (r) { return '<li>' + esc(r.file + ': ' + r.msg) + '</li>'; }).join('') +
+                bad.slice(0, 20).map(function (r) { return '<li>' + esc(shortName(r.file) + ': ' + r.msg) + '</li>'; }).join('') +
                 (bad.length > 20 ? '<li>…and ' + (bad.length - 20) + ' more (see the plugin log)</li>' : '') + '</ul>';
         }
         if (j.cmd === 'level' && j.state === 'done' && res.length - bad.length > 0) {
@@ -742,6 +778,7 @@
 
     function init() {
         if (!$id('audioLeveler')) { return; }
+        setTab(tab, true);
 
         $id('alTargetPreset').addEventListener('change', function () {
             var custom = this.value === 'custom';
@@ -770,7 +807,10 @@
         $id('alWaitIdle').addEventListener('change', saveOptions);
         $id('alLossless').addEventListener('change', saveOptions);
         $id('alPlaybackGain').addEventListener('change', saveOptions);
-        $id('alVideos').addEventListener('change', function () { saveOptions().then(loadFiles); });
+        $id('alTabs').addEventListener('click', function (e) {
+            var b = e.target.closest('[data-tab]');
+            if (b) { e.preventDefault(); setTab(b.getAttribute('data-tab')); }
+        });
         $id('alAutoLevel').addEventListener('change', function () {
             saveOptions();
             // Switched on: look for new songs straight away.
@@ -807,7 +847,7 @@
                 var bg = kept.filter(function (f) { return f.choice === 'background'; }).length;
                 var sk = kept.length - bg;
                 toast('Kept ' + [bg ? bg + ' Background' : '', sk ? sk + ' Skip' : ''].filter(Boolean).join(' and ') +
-                    ' song' + (kept.length === 1 ? '' : 's') + ' as they were. Change those from their own dropdown, ' +
+                    ' ' + noun(kept.length) + ' as they were. Change those from their own dropdown, ' +
                     'or select only them and use Set fix.');
             }
         });
@@ -848,7 +888,7 @@
 
         $id('alMeasure').addEventListener('click', function () {
             var sel = selectedNames();
-            start('analyze', { files: sel.length ? sel : 'all', force: sel.length > 0 });
+            start('analyze', { files: sel.length ? sel : 'all', scope: tab, force: sel.length > 0 });
         });
         $id('alLevelSel').addEventListener('click', function () {
             var o = readOptions();
@@ -858,6 +898,7 @@
         $id('alLevelAll').addEventListener('click', function () {
             var o = readOptions();
             o.files = 'all';
+            o.scope = tab;
             start('level', o);
         });
         $id('alRestoreSel').addEventListener('click', function () {

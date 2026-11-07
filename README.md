@@ -57,10 +57,10 @@ The status column shows which path each song took.
 
 ## Videos
 
-With **Include videos** on (the default), the videos in FPP's videos folder are listed with the songs (marked *video*, with a **Videos** filter) and their sound is measured and leveled the same way, so a video in a playlist plays as loud as the songs around it. Every fix, recommendation, Background, Skip, speaker matching and automatic leveling work the same.
+The videos in FPP's videos folder get their own **Videos** tab beside **Songs** (it appears once the folder has videos). The two lists are kept separate: each tab has its own numbers, target advisor, filters and selection, and **Measure** / **Level all** only work on the tab that's open, so leveling your songs never touches a video and the other way round. A video's sound is measured and leveled the same way as a song, so a video in a playlist plays as loud as the songs around it. Every fix, recommendation, Background, Skip and speaker matching work the same, and automatic leveling covers new videos too.
 
 - **Only the sound is touched.** Where FPP applies playback gain to videos (newer FPP), a volume-only fix goes there and the file isn't changed at all. Otherwise the file is rewritten with the picture, subtitles and any extra sound tracks copied bit for bit (`-c copy`); only the first sound track is re-encoded (AAC at 256 to 320 kbps for MP4/MOV/MKV, Opus for WebM, MP3 320 kbps for AVI). In testing, the picture stream was byte-identical and audio stayed within 7 ms of the picture.
-- A video with no sound track is shown as *No sound track* and left alone.
+- A video with no sound track is shown as *No sound track* and left alone. Finding that out takes a quick look at the file's header (ffprobe), not a decode, and it's remembered.
 - Videos are backed up like songs (in `backups/videos/`), and they can be large, so keep an eye on free space.
 - Internally a video is named `videos/<file>`, the same key FPP's own Normalize uses in `media_gain.json`.
 

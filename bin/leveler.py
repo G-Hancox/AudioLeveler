@@ -522,11 +522,18 @@ class Worker:
                           if safe_name(VIDEO_PREFIX + f) and os.path.isfile(os.path.join(self.videos, f)))
         return out
 
+    def in_scope(self, name):
+        """An "all" request covers one list: songs (the default) or videos."""
+        scope = self.req.get("scope")
+        if scope not in ("songs", "videos"):
+            return True  # automatic leveling: songs and videos alike
+        return is_video(name) == (scope == "videos")
+
     def files_requested(self):
         listed = self.all_media()
         want = self.req.get("files", "all")
         if want == "all" or not isinstance(want, list):
-            return listed
+            return [f for f in listed if self.in_scope(f)]
         have = set(listed)
         return [f for f in want if f in have]
 
@@ -1122,7 +1129,7 @@ class Worker:
         have = sorted(have | self.our_gains())
         want = self.req.get("files", "all")
         if want == "all" or not isinstance(want, list):
-            return have
+            return [f for f in have if self.in_scope(f)]
         return [f for f in want if f in have]
 
     def run(self):

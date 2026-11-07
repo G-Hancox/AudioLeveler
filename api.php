@@ -6,7 +6,7 @@
  *
  *   GET    files      songs in the music folder (and videos, named "videos/<file>") with their measurements
  *   GET    job        progress of the current / last job
- *   POST   analyze    measure loudness            body: {"files": [...]|"all", "force": bool}
+ *   POST   analyze    measure loudness            body: {"files": [...]|"all", "scope": "songs"|"videos", "force": bool}
  *   POST   level      level songs                 body: {"files": [...]|"all", "target", "ceiling", "mode", "backup", "waitIdle"}
  *   POST   restore    put originals back          body: {"files": [...]|"all"}
  *   POST   cancel     stop the running job after the current song
@@ -241,6 +241,13 @@ function AudioLevelerCleanFiles($files)
     return $out;
 }
 
+// Which list an "all" request covers: the Songs tab or the Videos tab.
+function AudioLevelerScope($body)
+{
+    $scope = isset($body['scope']) ? $body['scope'] : '';
+    return in_array($scope, array('songs', 'videos'), true) ? $scope : 'songs';
+}
+
 function AudioLevelerStart($command, $request)
 {
     if (AudioLevelerBusy()) {
@@ -455,6 +462,7 @@ function AudioLevelerAnalyze()
     $body = AudioLevelerBody();
     return AudioLevelerStart('analyze', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
+        'scope' => AudioLevelerScope($body),
         'force' => !empty($body['force']),
         'match' => AudioLevelerOptions()['match'] === 'lufs' ? 'lufs' : 'speakers',
     ));
@@ -470,6 +478,7 @@ function AudioLevelerLevel()
     $mode = 'auto';
     return AudioLevelerStart('level', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
+        'scope' => AudioLevelerScope($body),
         'target' => max(-30, min(-6, floatval($opt['target']))),
         'ceiling' => max(-6, min(0, floatval($opt['ceiling']))),
         'mode' => $mode,
@@ -489,6 +498,7 @@ function AudioLevelerRestore()
     $opt = AudioLevelerOptions();
     return AudioLevelerStart('restore', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
+        'scope' => AudioLevelerScope($body),
         'waitIdle' => (bool) $opt['waitIdle'],
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
         'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',

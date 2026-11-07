@@ -83,8 +83,9 @@
                it waits for shows and you can close the browser. Speed doesn't affect quality.</p>
 
             <h6 class="fw-semibold">Videos</h6>
-            <p>With <b>Include videos</b> on, the videos in FPP's videos folder are listed with your songs (marked <span class="badge text-bg-secondary fw-normal">video</span>)
-               and their sound is leveled to match, so a video in a playlist isn't louder or quieter than the songs around it.
+            <p>Videos have their own <b>Videos</b> tab next to <b>Songs</b>. Each tab is its own list, with its own numbers and selection, and
+               <b>Measure</b> and <b>Level all</b> only work on the tab that's open. A video's sound is leveled to match your songs,
+               so a video in a playlist isn't louder or quieter than the songs around it.
                Only the sound is ever touched: on FPP versions that can turn a video's sound up or down as it plays, a volume change goes there and the file isn't changed;
                otherwise the picture is copied exactly as it is and just the sound is re-encoded at high quality. Videos without sound are left alone.
                Video backups can be large, so keep an eye on free space.</p>
