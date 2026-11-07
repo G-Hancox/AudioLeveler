@@ -7,7 +7,7 @@
 
             <h6 class="fw-semibold">Quick start</h6>
             <ol>
-                <li>Press <b>Measure songs</b>. Each song's loudness and loudest peak are listed. Songs far from your target are shown in red, and songs that already distort are marked <span class="badge text-bg-danger">clips</span>.</li>
+                <li>Press <b>Measure songs</b>. Each song's loudness and loudest peak are listed. Songs far from your target are shown in red. Songs whose peaks go over full scale, so they clip when played, are marked <span class="badge text-bg-danger">clips</span>. Leveling brings those peaks under the ceiling; distortion recorded into the song itself can't be removed by any leveling tool.</li>
                 <li>Pick a target level and leveling type, or keep the defaults (-14 LUFS, loudness match + peak limiter).</li>
                 <li>Press <b>Level all</b>, or tick some songs and press <b>Level selected</b>.</li>
                 <li>Most songs are mastered louder than -14 LUFS, so after leveling the show may sound quieter overall. Turn FPP's volume up to suit.</li>
@@ -55,7 +55,7 @@
             <h6 class="fw-semibold">Audio Leveler or FPP's Normalize?</h6>
             <p>Newer FPP versions have a <b>Normalize</b> button in File Manager that adjusts each song's volume during playback without changing the file.
                That's lossless and fine for many shows. Audio Leveler rewrites the files instead, which lets it use a peak limiter or light compression,
-               so quiet songs reach the full target and songs that already clip are fixed. Use one or the other for a given song;
+               so quiet songs reach the full target with every peak kept under the ceiling. Use one or the other for a given song;
                FPP ignores its own Normalize setting for a file that has been changed since it was normalized, so they won't stack.</p>
 
             <h6 class="fw-semibold">Supported files</h6>

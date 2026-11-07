@@ -126,7 +126,7 @@
 
     function statusHtml(f) {
         var clip = f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0
-            ? ' <span class="badge text-bg-danger">clips</span>' : '';
+            ? ' <span class="badge text-bg-danger" title="Peaks go over full scale, so this song clips when played. Leveling brings them under the ceiling. Distortion recorded into the song itself can\'t be removed.">clips</span>' : '';
         return statusText(f) + clip;
     }
 

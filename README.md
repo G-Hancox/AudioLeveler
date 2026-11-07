@@ -23,12 +23,14 @@ Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a cust
 
 **Content Setup → Audio Leveler**
 
-1. **Measure songs** lists each song's loudness and peak. Songs far from the target show in red, and songs that already distort are flagged as clipping.
+1. **Measure songs** lists each song's loudness and peak. Songs far from the target show in red. Songs whose peaks go over full scale, so they clip when played, are flagged.
 2. Choose a target and leveling type.
 3. Press **Level all**, or tick songs and press **Level selected**.
 4. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
 
 ## Good to know
+
+- **Clipping it can and can't fix.** Leveling brings every peak under the ceiling, so nothing goes over full scale when it plays. Distortion that was recorded or mastered into a song can't be removed by any leveling tool.
 
 - **Leveling is slow on a Pi.** Each song is measured, re-encoded and checked again, which often takes a minute or more per song, so a whole library can take a few hours. It's safe to leave a big job running overnight, because it waits for shows and keeps going with the browser closed. Speed doesn't affect quality.
 - **Uploading a song again replaces the leveled copy.** This includes re-uploading after fixing a sequence, or xLights' FPP Connect sending the audio along with a sequence. The plugin flags the song as *Replaced since leveling* (there's a **Replaced** filter for it). Level it again to bring it back on target. The new upload becomes the new original for backups.
@@ -39,9 +41,9 @@ Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a cust
 
 ## Audio Leveler or FPP's built-in Normalize?
 
-Newer FPP builds include a **Normalize** button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless and covers many shows. It has no limiter, though, so a quiet song can only be raised as far as its peaks allow, and songs that already clip stay clipped.
+Newer FPP builds include a **Normalize** button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless and covers many shows. It has no limiter, though, so a quiet song can only be raised as far as its peaks allow.
 
-Audio Leveler rewrites the files instead. That lets it use a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, and existing clipping is fixed. It also works on FPP releases that don't have Normalize. Use one or the other for a given song. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
+Audio Leveler rewrites the files instead. That lets it use a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, with every peak kept under the ceiling. It also works on FPP releases that don't have Normalize. Use one or the other for a given song. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
 
 ## Files
 
