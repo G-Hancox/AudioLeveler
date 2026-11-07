@@ -8,15 +8,38 @@
             <h6 class="fw-semibold">Quick start</h6>
             <ol>
                 <li>Press <b>Measure songs</b>. Each song's loudness and loudest peak are listed. Songs far from your target are shown in red. Songs whose peaks go over full scale, so they clip when played, are marked <span class="badge text-bg-danger">clips</span>. Leveling brings those peaks under the ceiling; distortion recorded into the song itself can't be removed by any leveling tool.</li>
-                <li>Pick a target level and leveling type, or keep the defaults (-14 LUFS, loudness match + peak limiter).</li>
+                <li>Check the <b>Fix</b> column: it shows what leveling will do to each song, for example <i>−10.5 dB · lossless</i> or
+                    <i>+1.3 dB · limiter trims 2.6 dB</i>. Change any song's fix from its dropdown, or tick several songs and use <b>Set fix</b>.</li>
                 <li>Press <b>Level all</b>, or tick some songs and press <b>Level selected</b>.</li>
                 <li>Most songs are mastered louder than -14 LUFS, so after leveling the show may sound quieter overall. Turn FPP's volume up to suit.</li>
             </ol>
 
+            <h6 class="fw-semibold">Recommended fixes</h6>
+            <p>After measuring, each song gets a recommended fix that puts sound quality first:</p>
+            <ul>
+                <li><b>Fine as is</b> when it's within half a dB of the target.</li>
+                <li><b>Volume only</b> (lossless for MP3s) whenever turning it up or down reaches the target, or gets within 1 dB of it, without peaks going over the ceiling.</li>
+                <li><b>Limiter</b> only when it takes 3 dB or less of peak trimming to reach the target, which stays inaudible.</li>
+                <li>Otherwise <b>volume only</b>, landing a little under the target rather than squashing the song. The Fix column says where it will end up, so you can pick Limiter for that song if you'd rather have it louder.</li>
+            </ul>
+            <p>Compression is never chosen automatically. Songs with very wide dynamics get a note that it's available.
+               Songs longer than 15 minutes get a hint that they might be background tracks.</p>
+
+            <h6 class="fw-semibold">Choosing a fix per song</h6>
+            <ul>
+                <li><b>Default</b> follows the leveling type in the settings (normally <i>Recommended per song</i>).</li>
+                <li><b>Recommended</b>, <b>Volume only</b>, <b>Limiter</b> or <b>Compression</b> pick that treatment for this song.</li>
+                <li><b>Background</b> levels the song deliberately quieter than the show (10 dB under the target by default, set under <i>Background level</i>),
+                    for ambiance and off-hours music that should be heard but sit under everything else.</li>
+                <li><b>Skip</b> leaves the song alone, even when you press <b>Level all</b>.</li>
+            </ul>
+            <p>Choices are saved per song and kept until you change them.</p>
+
             <h6 class="fw-semibold">Leveling types</h6>
             <ul>
+                <li><b>Recommended per song</b> (default): the gentlest fix for each song, as described above.</li>
                 <li><b>Volume only</b>: turns each song up or down and nothing else. If a quiet song has big peaks, it stops short of the target rather than clip.</li>
-                <li><b>Loudness match + peak limiter</b>: turns songs up or down, then catches any peaks that would go over the ceiling. Every song reaches the target. This is the best choice for most shows.</li>
+                <li><b>Loudness match + peak limiter</b>: turns songs up or down, then catches any peaks that would go over the ceiling. Every song reaches the target.</li>
                 <li><b>Light compression</b>: also narrows the gap between quiet and loud parts of a song (2:1 above -20 dB). Useful outdoors or over an FM transmitter, where soft intros get lost.</li>
             </ul>
 

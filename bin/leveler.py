@@ -52,7 +52,53 @@ NEAR_TARGET_DB = 0.5
 # with a soft knee, slow enough not to pump on drums.
 COMPRESSOR = "acompressor=threshold=-20dB:ratio=2:attack=25:release=250:knee=6:makeup=1"
 
-MODES = ("volume", "limit", "compress")
+MODES = ("auto", "volume", "limit", "compress")
+
+# Per-song choices the page can save (choices.json). "default" follows the
+# leveling type in the settings.
+CHOICES = ("default", "auto", "volume", "limit", "compress", "background", "skip")
+
+# Quality first: the limiter is only recommended when reaching the target
+# takes no more than this much peak reduction, which stays inaudible. Beyond
+# that the recommendation is a plain volume change that lands a bit quieter.
+GENTLE_LIMIT_DB = 3.0
+
+# A plain volume change that lands within this of the target is preferred
+# over limiting, and peak readings within this tolerance count as "at" the
+# ceiling.
+VOLUME_CLOSE_DB = 1.0
+PEAK_TOLERANCE_DB = 0.1
+
+# Notes shown with a recommendation (never acted on automatically).
+WIDE_DYNAMICS_LU = 15.0     # loudness range above this: compression could help outdoors
+LONG_TRACK_SECONDS = 900    # longer than 15 minutes: probably ambiance / background
+
+
+def recommend(I, TP, target, ceiling):
+    """
+    The quality-first fix for a song: "none" (close enough), "volume" (a plain
+    volume change, lossless for MP3s), or "limit" (gentle peak limiting).
+    Compression is never recommended; the user picks it if they want it.
+    The page has a JavaScript copy of this for display; keep them in step.
+    """
+    if I is None:
+        return "none"
+    gain = target - I
+    # How far the peaks would go over the ceiling at the target level. A
+    # tenth of a dB is measurement noise.
+    over = None if TP is None else TP + gain - ceiling
+    if over is None or over <= PEAK_TOLERANCE_DB:
+        return "none" if abs(gain) < NEAR_TARGET_DB else "volume"
+    # A plain volume change has to stop where the peaks reach the ceiling,
+    # 'over' dB short of the target. Close enough: no limiter needed.
+    if over <= VOLUME_CLOSE_DB:
+        return "volume"
+    if over <= GENTLE_LIMIT_DB:
+        return "limit"
+    return "volume"
+    if over <= GENTLE_LIMIT_DB:
+        return "limit"
+    return "volume"
 
 
 # --------------------------------------------------------------------------
@@ -394,10 +440,10 @@ class Worker:
         """Gain in dB, and whether a limiter is needed to keep peaks under the ceiling."""
         gain = target - I
         if mode == "volume":
-            if TP is not None and TP + gain > ceiling:
+            if TP is not None and TP + gain > ceiling + PEAK_TOLERANCE_DB:
                 return ceiling - TP, False
             return gain, False
-        need_limit = TP is not None and TP + gain > ceiling
+        need_limit = TP is not None and TP + gain > ceiling + PEAK_TOLERANCE_DB
         return gain, need_limit
 
     def build_filter(self, gain, limit, ceiling, sr, mode, dither=False):
@@ -422,8 +468,18 @@ class Worker:
         src, from_backup = self.original_for(name)
 
         info = probe(src)
+        if mode == "auto":
+            m = measure(src)
+            if m["I"] is None:
+                return False, "skipped: song is silent or too short to measure"
+            mode = recommend(m["I"], m["TP"], target, ceiling)
+            if mode == "none":
+                mode = "volume"  # within half a dB: the near-target rule below leaves it be
+        else:
+            m = None
         pre = COMPRESSOR if mode == "compress" else None
-        m = measure(src, pre)
+        if m is None or pre:
+            m = measure(src, pre)
         before = m["I"] if not pre else measure(src)["I"]
         if m["I"] is None:
             return False, "skipped: song is silent or too short to measure"
@@ -543,8 +599,11 @@ class Worker:
         before = "%.1f" % before if before is not None else "?"
         after = out["I"] if out["I"] is not None else target
         how = {"lossless": "lossless", "original": "original restored", "encoded": "re-encoded"}[method]
-        if mode == "volume" and target - after > 0.3 and method != "original":
-            note = " (held back by peaks; try the limiter mode to go louder)" + note
+        held = (mode == "volume" and m["TP"] is not None
+                and m["TP"] + (target - m["I"]) > ceiling + 0.05)
+        if held and target - after > 0.3 and method != "original":
+            note = " (held back by peaks, ends %.1f dB under the target; the limiter could go louder)" % (
+                target - after) + note
         elif limit:
             note = " (limiter caught the peaks)" + note
         return True, "%s -> %.1f LUFS, %+.1f dB, %s%s" % (before, after, gain, how, note)
@@ -562,15 +621,21 @@ class Worker:
         miss = gain - steps * step
         if mode == "limit" and miss > step / 2:
             return None, "it needed the limiter to reach the target"
+        if abs(miss) > step / 2 + 0.05:
+            # The peaks leave less room than one lossless step, so whole steps
+            # can't get within half a step of the right level: do it exactly.
+            return None, "the peaks left less room than one lossless 1.5 dB step"
         return steps, None
 
     def cmd_level(self):
         target = clamp(float(self.req.get("target", -14)), -30.0, -6.0)
         ceiling = clamp(float(self.req.get("ceiling", -1)), -6.0, 0.0)
-        mode = self.req.get("mode", "limit")
+        mode = self.req.get("mode", "auto")
         if mode not in MODES:
-            mode = "limit"
+            mode = "auto"
         keep = bool(self.req.get("backup", True))
+        bg_offset = clamp(float(self.req.get("bgOffset", 10)), 3.0, 30.0)
+        choices = read_json(os.path.join(self.data, "choices.json"), {})
         files = self.files_requested()
         self.save_job(total=len(files), target=target, ceiling=ceiling, mode=mode)
         logging.info("Leveling %d file(s) to %.1f LUFS, ceiling %.1f dBTP, mode %s, backups %s, lossless MP3 %s",
@@ -582,8 +647,21 @@ class Worker:
             self.save_job(current=name, done=i)
             if not self.wait_for_idle(name) and self.cancelled():
                 break
+            choice = choices.get(name, "default")
+            if choice not in CHOICES:
+                choice = "default"
+            song_mode, song_target = mode, target
+            if choice == "skip":
+                self.result(name, True, "skipped (set to Skip)")
+                continue
+            if choice == "background":
+                song_mode, song_target = "volume", max(-40.0, target - bg_offset)
+            elif choice != "default":
+                song_mode = choice
             try:
-                ok, msg = self.level_one(name, target, ceiling, mode, keep)
+                ok, msg = self.level_one(name, song_target, ceiling, song_mode, keep)
+                if ok and choice == "background":
+                    msg += " (background, %g dB under the show)" % bg_offset
             except Exception as ex:
                 ok, msg = False, str(ex)
             self.result(name, ok, msg)

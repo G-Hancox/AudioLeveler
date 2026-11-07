@@ -32,7 +32,26 @@
                     </select>
                     <div class="form-text mb-3">The loudest peak allowed, so nothing clips or distorts.</div>
 
+                    <label for="alBgOffset" class="form-label fw-semibold mb-1">Background level</label>
+                    <select id="alBgOffset" class="form-select mb-1">
+                        <option value="6">6 dB under the show</option>
+                        <option value="10">10 dB under the show &middot; recommended</option>
+                        <option value="14">14 dB under the show</option>
+                        <option value="18">18 dB under the show</option>
+                    </select>
+                    <div class="form-text mb-3">For songs set to <i>Background</i> in the Fix column, like ambiance and off-hours music: heard, but under the show.</div>
+
                     <div class="fw-semibold mb-1">Leveling type</div>
+                    <div class="form-text mt-0 mb-2">For songs left on <i>Default</i> in the Fix column. You can pick a different fix for any song.</div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="alMode" id="alModeAuto" value="auto">
+                        <label class="form-check-label" for="alModeAuto">
+                            <span class="fw-semibold">Recommended per song</span> <span class="badge text-bg-secondary">default</span><br>
+                            <span class="form-text">Picks the gentlest fix for each song: a plain volume change (lossless for MP3s) whenever it's enough,
+                                the limiter only when it takes 3 dB or less of peak trimming, and otherwise volume only, landing a little quieter
+                                rather than squashing the song. Never compresses on its own.</span>
+                        </label>
+                    </div>
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="radio" name="alMode" id="alModeVolume" value="volume">
                         <label class="form-check-label" for="alModeVolume">
@@ -43,7 +62,7 @@
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="radio" name="alMode" id="alModeLimit" value="limit">
                         <label class="form-check-label" for="alModeLimit">
-                            <span class="fw-semibold">Loudness match + peak limiter</span> <span class="badge text-bg-secondary">default</span><br>
+                            <span class="fw-semibold">Loudness match + peak limiter</span><br>
                             <span class="form-text">Turns songs up or down and gently catches the peaks, so every song hits the target without clipping.</span>
                         </label>
                     </div>
@@ -125,6 +144,16 @@
                     <div class="d-flex flex-wrap gap-2 align-items-center rounded border bg-body-tertiary px-2 py-1 mb-2">
                         <span id="alSelText" class="small text-body-secondary me-auto">No songs selected</span>
                         <button id="alClearSel" type="button" class="btn btn-sm btn-link d-none">Clear</button>
+                        <select id="alSetFix" class="form-select form-select-sm w-auto" aria-label="Set the fix for the selected songs" disabled>
+                            <option value="">Set fix&hellip;</option>
+                            <option value="default">Default</option>
+                            <option value="auto">Recommended</option>
+                            <option value="volume">Volume only</option>
+                            <option value="limit">Limiter</option>
+                            <option value="compress">Compression</option>
+                            <option value="background">Background</option>
+                            <option value="skip">Skip</option>
+                        </select>
                         <button id="alLevelSel" type="button" class="buttons btn btn-sm btn-success" disabled>Level selected</button>
                         <button id="alRestoreSel" type="button" class="buttons btn btn-sm btn-outline-secondary" disabled>Restore originals</button>
                     </div>
@@ -137,12 +166,13 @@
                                     <th scope="col"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="name">Song <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="text-end"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="lufs">Loudness <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="text-end d-none d-sm-table-cell"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="peak">Peak <span class="al-sort-icon text-body-secondary"></span></button></th>
-                                    <th scope="col" class="d-none d-md-table-cell">Status</th>
-                                    <th scope="col" class="text-end"></th>
+                                    <th scope="col" class="d-none d-lg-table-cell">Status</th>
+                                    <th scope="col" class="d-none d-lg-table-cell">Fix</th>
+                                    <th scope="col" class="text-end d-none d-sm-table-cell"></th>
                                 </tr>
                             </thead>
                             <tbody id="alRows">
-                                <tr><td colspan="6" class="text-body-secondary">Loading&hellip;</td></tr>
+                                <tr><td colspan="7" class="text-body-secondary">Loading&hellip;</td></tr>
                             </tbody>
                         </table>
                     </div>

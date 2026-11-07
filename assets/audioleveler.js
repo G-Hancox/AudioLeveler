@@ -59,7 +59,106 @@
         return Math.max(1, Math.round(n / 1e6)) + ' MB';
     }
 
-    var MODE_NAMES = { volume: 'volume only', limit: 'limiter', compress: 'compression' };
+    var MODE_NAMES = { auto: 'recommended', volume: 'volume only', limit: 'limiter', compress: 'compression' };
+    var CHOICE_NAMES = {
+        'default': 'Default', auto: 'Recommended', volume: 'Volume only', limit: 'Limiter',
+        compress: 'Compression', background: 'Background', skip: 'Skip'
+    };
+
+    /* ---------------- per-song recommendation (display copy) ----------------
+       Mirrors recommend() in bin/leveler.py, which is what the worker uses;
+       keep the two in step. Quality first: a plain volume change whenever
+       it's enough, the limiter only for gentle trims, never compression. */
+
+    var NEAR_TARGET_DB = 0.5, GENTLE_LIMIT_DB = 3.0, LOSSLESS_STEP = 1.505;
+    var VOLUME_CLOSE_DB = 1.0, PEAK_TOLERANCE_DB = 0.1;
+    var WIDE_DYNAMICS_LU = 15, LONG_TRACK_SECONDS = 900;
+
+    function recommendMode(I, TP, target, ceiling) {
+        var gain = target - I;
+        var over = (TP === null || TP === undefined) ? null : TP + gain - ceiling;
+        if (over === null || over <= PEAK_TOLERANCE_DB) {
+            return Math.abs(gain) < NEAR_TARGET_DB ? 'none' : 'volume';
+        }
+        if (over <= VOLUME_CLOSE_DB) { return 'volume'; }
+        return over <= GENTLE_LIMIT_DB ? 'limit' : 'volume';
+    }
+
+    function dB(v) { return (v > 0 ? '+' : (v < 0 ? '−' : '±')) + Math.abs(v).toFixed(1) + ' dB'; }
+
+    // What leveling would do to this song now: {text, note, rec}
+    function planFor(f) {
+        if (!hasLufs(f)) { return { text: 'Measure first', note: '' }; }
+        var choice = f.choice || 'default';
+        var mode = choice === 'default' ? options.mode : choice;
+        var target = options.target, ceiling = options.ceiling;
+        var I = f.lufs, TP = (f.peak === null || f.peak === undefined) ? null : f.peak;
+        var mp3Lossless = /\.mp3$/i.test(f.name) && options.lossless !== false;
+        var note = [];
+        if (f.lra !== null && f.lra !== undefined && f.lra > WIDE_DYNAMICS_LU && mode !== 'compress') {
+            note.push('Wide dynamics (' + f.lra.toFixed(0) + ' LU); compression is an option if quiet parts get lost');
+        }
+        if (f.length && f.length > LONG_TRACK_SECONDS && choice !== 'background' && choice !== 'skip') {
+            note.push('Long track. Background?');
+        }
+        if (choice === 'skip') { return { text: 'Skipped', note: '' }; }
+        if (choice === 'background') { mode = 'volume'; target = target - (options.bgOffset || 10); }
+        var rec = mode === 'auto';
+        if (rec) {
+            mode = recommendMode(I, TP, target, ceiling);
+            if (mode === 'none') { return { text: 'Fine as is', note: note.join(' · '), rec: true }; }
+        }
+        var gain = target - I;
+        var text;
+        if (mode === 'compress') {
+            text = 'Compression, then to ' + target + ' LUFS · re-encode';
+        } else if (mode === 'limit') {
+            var trim = TP === null ? 0 : TP + gain - ceiling;
+            if (trim <= PEAK_TOLERANCE_DB) {
+                text = dB(gain) + (mp3Lossless ? ' · lossless' : ' · re-encode');
+            } else {
+                text = dB(gain) + ' · limiter trims ' + trim.toFixed(1) + ' dB · re-encode';
+            }
+        } else { // volume
+            if (TP !== null && TP + gain > ceiling + PEAK_TOLERANCE_DB) { gain = ceiling - TP; }
+            if (Math.abs(gain) < NEAR_TARGET_DB && !(TP !== null && TP > ceiling)) {
+                return { text: choice === 'background' ? 'Already at background level' : 'Fine as is', note: note.join(' · '), rec: rec };
+            }
+            var lossless = false;
+            if (mp3Lossless) {
+                var steps = Math.round(gain / LOSSLESS_STEP);
+                while (steps > 0 && TP !== null && TP + steps * LOSSLESS_STEP > ceiling) { steps--; }
+                // Same rule as the worker: whole steps must land within half a step.
+                if (Math.abs(gain - steps * LOSSLESS_STEP) <= LOSSLESS_STEP / 2 + 0.05) {
+                    lossless = true;
+                    gain = steps * LOSSLESS_STEP;
+                }
+            }
+            if (lossless && Math.abs(gain) < 0.01) {
+                text = 'Fine as is';
+            } else {
+                text = dB(gain) + (lossless ? ' · lossless' : ' · re-encode');
+            }
+            var lands = I + gain;
+            if (lands < target - 0.8) {
+                text += ' · ends at ' + lands.toFixed(1) + ' LUFS';
+            }
+        }
+        return { text: text, note: note.join(' · '), rec: rec };
+    }
+
+    function fixHtml(f, i) {
+        var choice = f.choice || 'default';
+        var opts = Object.keys(CHOICE_NAMES).map(function (k) {
+            var label = CHOICE_NAMES[k];
+            if (k === 'default') { label += ' (' + (MODE_NAMES[options.mode] || options.mode) + ')'; }
+            return '<option value="' + k + '"' + (k === choice ? ' selected' : '') + '>' + esc(label) + '</option>';
+        }).join('');
+        var plan = planFor(f);
+        return '<select class="form-select form-select-sm al-fix" data-i="' + i + '" aria-label="Fix for ' + esc(f.name) + '">' + opts + '</select>' +
+            '<div class="small mt-1">' + esc(plan.text) + '</div>' +
+            (plan.note ? '<div class="small text-body-secondary">' + esc(plan.note) + '</div>' : '');
+    }
 
     /* ---------------- options ---------------- */
 
@@ -77,7 +176,8 @@
         return {
             target: currentTarget(),
             ceiling: parseFloat($id('alCeiling').value),
-            mode: mode ? mode.value : 'limit',
+            mode: mode ? mode.value : 'auto',
+            bgOffset: parseFloat($id('alBgOffset').value) || 10,
             backup: $id('alBackup').checked,
             waitIdle: $id('alWaitIdle').checked,
             lossless: $id('alLossless').checked
@@ -105,6 +205,14 @@
         $id('alBackup').checked = !!o.backup;
         $id('alWaitIdle').checked = !!o.waitIdle;
         $id('alLossless').checked = o.lossless !== false;
+        var bg = String(Number(o.bgOffset || 10));
+        var bs = $id('alBgOffset');
+        if (!Array.prototype.some.call(bs.options, function (op) { return op.value === bg; })) {
+            var bo = document.createElement('option');
+            bo.value = bg; bo.textContent = bg + ' dB under the show';
+            bs.appendChild(bo);
+        }
+        bs.value = bg;
     }
 
     function saveOptions() {
@@ -251,9 +359,9 @@
         var tb = $id('alRows');
         shown = visibleFiles();
         if (!files.length) {
-            tb.innerHTML = '<tr><td colspan="6" class="text-body-secondary py-3 text-center">No songs in the music folder.</td></tr>';
+            tb.innerHTML = '<tr><td colspan="7" class="text-body-secondary py-3 text-center">No songs in the music folder.</td></tr>';
         } else if (!shown.length) {
-            tb.innerHTML = '<tr><td colspan="6" class="text-body-secondary py-3 text-center">No songs match this filter.</td></tr>';
+            tb.innerHTML = '<tr><td colspan="7" class="text-body-secondary py-3 text-center">No songs match this filter.</td></tr>';
         } else {
             tb.innerHTML = shown.map(function (f, i) {
                 var lufs = hasLufs(f) ? f.lufs.toFixed(1) : '&ndash;';
@@ -264,12 +372,15 @@
                 return '<tr' + (selected[f.name] ? ' class="table-active"' : '') + '>' +
                     '<td class="text-center"><input class="form-check-input al-sel" type="checkbox" data-i="' + i + '"' +
                     (selected[f.name] ? ' checked' : '') + ' aria-label="Select ' + esc(f.name) + '"></td>' +
-                    '<td class="text-break">' + esc(f.name) +
-                    '<div class="d-md-none">' + statusHtml(f) + '</div></td>' +
+                    '<td class="text-break al-song">' + esc(f.name) +
+                    '<div class="d-lg-none mt-1">' + statusHtml(f) + '</div>' +
+                    '<div class="d-lg-none mt-1 al-fix-cell">' + fixHtml(f, i) + '</div>' +
+                    (restore ? '<div class="d-sm-none mt-1">' + restore + '</div>' : '') + '</td>' +
                     '<td class="text-end text-nowrap ' + lufsClass(f) + '">' + lufs + meterHtml(f) + '</td>' +
                     '<td class="text-end text-nowrap d-none d-sm-table-cell">' + peak + '</td>' +
-                    '<td class="d-none d-md-table-cell text-nowrap">' + statusHtml(f) + '</td>' +
-                    '<td class="text-end">' + restore + '</td>' +
+                    '<td class="d-none d-lg-table-cell text-nowrap">' + statusHtml(f) + '</td>' +
+                    '<td class="d-none d-lg-table-cell al-fix-cell">' + fixHtml(f, i) + '</td>' +
+                    '<td class="text-end d-none d-sm-table-cell">' + restore + '</td>' +
                     '</tr>';
             }).join('');
         }
@@ -292,6 +403,7 @@
         $id('alLevelSel').disabled = b || !sel.length;
         var selWithBackup = files.filter(function (f) { return selected[f.name] && f.backup; }).length;
         $id('alRestoreSel').disabled = b || !selWithBackup;
+        $id('alSetFix').disabled = !sel.length;
         $id('alSelText').textContent = sel.length
             ? sel.length + ' song' + (sel.length === 1 ? '' : 's') + ' selected' +
               (selWithBackup ? ' · ' + selWithBackup + ' with an original to restore' : '')
@@ -302,6 +414,21 @@
         var shownSel = shown.filter(function (f) { return selected[f.name]; }).length;
         all.checked = shown.length > 0 && shownSel === shown.length;
         all.indeterminate = shownSel > 0 && shownSel < shown.length;
+    }
+
+    // Save how the given songs should be leveled, and show the new plan at once.
+    function setChoice(names, choice) {
+        if (!names.length) { return; }
+        files.forEach(function (f) { if (names.indexOf(f.name) >= 0) { f.choice = choice; } });
+        renderRows();
+        api('POST', 'choice', { files: names, choice: choice }).then(function () {
+            if (names.length > 1) {
+                toast(names.length + ' songs set to ' + CHOICE_NAMES[choice] + '.');
+            }
+        }).catch(function (e) {
+            toast(e.message, false);
+            loadFiles();
+        });
     }
 
     function loadFiles() {
@@ -445,6 +572,7 @@
         $id('alBackup').addEventListener('change', saveOptions);
         $id('alWaitIdle').addEventListener('change', saveOptions);
         $id('alLossless').addEventListener('change', saveOptions);
+        $id('alBgOffset').addEventListener('change', saveOptions);
 
         $id('alRows').addEventListener('change', function (e) {
             if (e.target.classList.contains('al-sel')) {
@@ -452,7 +580,15 @@
                 if (f) { selected[f.name] = e.target.checked; }
                 e.target.closest('tr').classList.toggle('table-active', e.target.checked);
                 updateButtons();
+            } else if (e.target.classList.contains('al-fix')) {
+                var song = shown[+e.target.getAttribute('data-i')];
+                if (song) { setChoice([song.name], e.target.value); }
             }
+        });
+        $id('alSetFix').addEventListener('change', function () {
+            var v = this.value;
+            this.value = '';
+            if (v) { setChoice(selectedNames(), v); }
         });
         $id('alRows').addEventListener('click', function (e) {
             var btn = e.target.closest('.al-restore');
@@ -533,7 +669,7 @@
         });
 
         api('GET', 'options').then(function (j) { showOptions(j.options); })
-            .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'limit', backup: true, waitIdle: true, lossless: true }); })
+            .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'auto', backup: true, waitIdle: true, lossless: true, bgOffset: 10 }); })
             .then(loadFiles)
             .then(poll);
     }

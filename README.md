@@ -6,11 +6,18 @@ It measures each song in FPP's music folder (EBU R128 integrated loudness in LUF
 
 | Leveling type | What it does |
 |---|---|
+| **Recommended per song** (default) | The gentlest fix for each song, chosen after measuring: nothing if it's within 0.5 dB; a plain volume change (lossless for MP3s) whenever that reaches the target, or gets within 1 dB of it, without peaks going over the ceiling; the limiter only when it takes 3 dB or less of peak trimming; otherwise volume only, landing a little under the target rather than squashing the song. Never compresses on its own. |
 | **Volume only** | Turns each song up or down. Never changes the sound, but a quiet song with big peaks may stop short of the target instead of clipping. |
-| **Loudness match + peak limiter** (default) | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
+| **Loudness match + peak limiter** | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
 | **Light compression** | Also narrows the gap between a song's quiet and loud parts (2:1 above -20 dBFS). Good outdoors or over FM. |
 
 Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
+
+### Per-song fixes
+
+After measuring, a **Fix** column shows what leveling will do to each song (for example `−10.5 dB · lossless`, `+1.3 dB · limiter trims 2.6 dB`, `Fine as is`), with notes for very dynamic songs (compression available) and long tracks (background?). Each song has a dropdown: **Default** (follows the settings), **Recommended**, **Volume only**, **Limiter**, **Compression**, **Background** or **Skip**. Several songs can be set at once from the selection bar. Choices are saved in `plugindata/AudioLeveler/choices.json`.
+
+**Background** levels a song deliberately quieter than the show, 10 dB under the target by default and adjustable. It's meant for ambiance and off-hours tracks that should be heard but sit under everything else. **Skip** leaves a song alone even on *Level all*.
 
 ## Sound quality
 
@@ -34,7 +41,7 @@ The status column shows which path each song took.
 **Content Setup → Audio Leveler**
 
 1. **Measure songs** lists each song's loudness and peak. Songs far from the target show in red. Songs whose peaks go over full scale, so they clip when played, are flagged.
-2. Choose a target and leveling type.
+2. Check the **Fix** column and change any song's fix if you want something different.
 3. Press **Level all**, or tick songs and press **Level selected**.
 4. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
 

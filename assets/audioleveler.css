@@ -59,3 +59,18 @@
     opacity: 0.45;
     pointer-events: none;
 }
+
+/* Keep song names readable without pushing the loudness off a phone screen. */
+#audioLeveler .al-song {
+    min-width: 8.5rem;
+}
+@media (min-width: 576px) {
+    #audioLeveler .al-song {
+        min-width: 11rem;
+    }
+}
+@media (min-width: 992px) {
+    #audioLeveler td.al-fix-cell .form-select {
+        min-width: 10rem;
+    }
+}

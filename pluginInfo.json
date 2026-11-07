@@ -2,7 +2,7 @@
 	"repoName": "AudioLeveler",
 	"name": "Audio Leveler",
 	"author": "G-Hancox",
-	"description": "Makes every song in your show play at the same loudness. Measures each song in the music folder (EBU R128 LUFS and true peak) and levels it to a target you choose, with three leveling types: volume only, loudness match with a peak limiter, or light compression. File names and timing are kept, so sequences stay in sync. Originals are backed up for one-click restore, and work waits until no show is playing. Runs entirely on this device using ffmpeg.",
+	"description": "Makes every song in your show play at the same loudness. Measures each song in the music folder (EBU R128 LUFS and true peak) and recommends the gentlest fix for each one: a lossless MP3Gain-style volume change when that's enough, a gentle true-peak limiter only when needed, or volume only, never squashing a song. You can pick a different fix per song: volume only, limiter, light compression, Background (deliberately under the show, for ambiance), or Skip. File names and timing are kept, so sequences stay in sync. Originals are backed up for one-click restore, and work waits until no show is playing. Runs entirely on this device using ffmpeg.",
 	"homeURL": "https://github.com/G-Hancox/AudioLeveler",
 	"srcURL": "https://github.com/G-Hancox/AudioLeveler.git",
 	"bugURL": "https://github.com/G-Hancox/AudioLeveler/issues",

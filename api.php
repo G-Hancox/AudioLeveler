@@ -34,6 +34,7 @@ function getEndpointsAudioLeveler()
         array('method' => 'GET', 'endpoint' => 'options', 'callback' => 'AudioLevelerGetOptions'),
         array('method' => 'POST', 'endpoint' => 'options', 'callback' => 'AudioLevelerSetOptions'),
         array('method' => 'DELETE', 'endpoint' => 'backups', 'callback' => 'AudioLevelerDeleteBackups'),
+        array('method' => 'POST', 'endpoint' => 'choice', 'callback' => 'AudioLevelerSetChoice'),
     );
 }
 
@@ -44,7 +45,8 @@ function AudioLevelerDefaults()
     return array(
         'target' => -14.0,   // LUFS
         'ceiling' => -1.0,   // dBTP
-        'mode' => 'limit',   // volume | limit | compress
+        'mode' => 'auto',    // auto (recommended per song) | volume | limit | compress
+        'bgOffset' => 10.0,  // dB under the target for songs set to Background
         'backup' => true,
         'waitIdle' => true,
         'lossless' => true,  // change MP3 volume losslessly when no limiting is needed
@@ -265,6 +267,7 @@ function AudioLevelerFiles()
     $data = AudioLevelerDataDir();
     $analysis = AudioLevelerReadJson($data . '/analysis.json', array());
     $leveled = AudioLevelerReadJson($data . '/leveled.json', array());
+    $choices = AudioLevelerReadJson($data . '/choices.json', array());
     $backupDir = $data . '/backups';
 
     $files = array();
@@ -304,6 +307,7 @@ function AudioLevelerFiles()
             }
         }
         $row['backup'] = file_exists("$backupDir/$name");
+        $row['choice'] = isset($choices[$name]) ? $choices[$name] : 'default';
         $files[] = $row;
     }
 
@@ -351,7 +355,7 @@ function AudioLevelerLevel()
 {
     $body = AudioLevelerBody();
     $opt = array_merge(AudioLevelerOptions(), $body);
-    $mode = in_array($opt['mode'], array('volume', 'limit', 'compress')) ? $opt['mode'] : 'limit';
+    $mode = in_array($opt['mode'], array('auto', 'volume', 'limit', 'compress')) ? $opt['mode'] : 'auto';
     return AudioLevelerStart('level', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
         'target' => max(-30, min(-6, floatval($opt['target']))),
@@ -360,6 +364,7 @@ function AudioLevelerLevel()
         'backup' => (bool) $opt['backup'],
         'waitIdle' => (bool) $opt['waitIdle'],
         'lossless' => (bool) $opt['lossless'],
+        'bgOffset' => max(3, min(30, floatval($opt['bgOffset']))),
     ));
 }
 
@@ -420,7 +425,7 @@ function AudioLevelerSetOptions()
             continue;
         }
         $val = $body[$k];
-        if ($k === 'mode' && !in_array($val, array('volume', 'limit', 'compress'))) {
+        if ($k === 'mode' && !in_array($val, array('auto', 'volume', 'limit', 'compress'))) {
             continue;
         }
         if ($k === 'target') {
@@ -428,6 +433,9 @@ function AudioLevelerSetOptions()
         }
         if ($k === 'ceiling') {
             $val = max(-6, min(0, floatval($val)));
+        }
+        if ($k === 'bgOffset') {
+            $val = max(3, min(30, floatval($val)));
         }
         if (is_bool($v)) {
             $val = $val ? '1' : '0';
@@ -454,5 +462,45 @@ function AudioLevelerDeleteBackups()
     }
     AudioLevelerLog("Deleted $n backup(s)");
     return json(array('status' => 'OK', 'deleted' => $n));
+}
+
+// POST /api/plugin/AudioLeveler/choice   body: {"files": [...], "choice": "background"}
+// Saves how each song should be leveled. "default" follows the settings.
+function AudioLevelerSetChoice()
+{
+    $body = AudioLevelerBody();
+    $choice = isset($body['choice']) ? $body['choice'] : '';
+    $allowed = array('default', 'auto', 'volume', 'limit', 'compress', 'background', 'skip');
+    if (!in_array($choice, $allowed, true)) {
+        return AudioLevelerError(400, 'Unknown choice.');
+    }
+    $files = AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : array());
+    if (!is_array($files) || count($files) == 0) {
+        return AudioLevelerError(400, 'No songs given.');
+    }
+    $path = AudioLevelerDataDir() . '/choices.json';
+    $fp = fopen($path, 'c+');
+    if (!$fp) {
+        return AudioLevelerError(500, 'Could not save the choice.');
+    }
+    flock($fp, LOCK_EX);
+    $choices = json_decode(stream_get_contents($fp), true);
+    if (!is_array($choices)) {
+        $choices = array();
+    }
+    foreach ($files as $f) {
+        if ($choice === 'default') {
+            unset($choices[$f]);
+        } else {
+            $choices[$f] = $choice;
+        }
+    }
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($choices, JSON_PRETTY_PRINT));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    return json(array('status' => 'OK', 'count' => count($files)));
 }
 ?>
