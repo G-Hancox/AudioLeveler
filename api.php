@@ -708,7 +708,8 @@ function AudioLevelerSetChoice()
     }
     ftruncate($fp, 0);
     rewind($fp);
-    fwrite($fp, json_encode($choices, JSON_PRETTY_PRINT));
+    // (object): with no choices left this must still be {} and not [].
+    fwrite($fp, json_encode((object) $choices, JSON_PRETTY_PRINT));
     fflush($fp);
     flock($fp, LOCK_UN);
     fclose($fp);

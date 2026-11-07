@@ -113,11 +113,16 @@ def now():
 
 
 def read_json(path, default):
+    """The file's JSON, or default if it's missing, damaged or the wrong shape
+    (PHP writes an empty map as [], for one)."""
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (OSError, ValueError):
         return default
+    if isinstance(default, dict) and not isinstance(data, dict):
+        return {} if data in ([], None) else default
+    return data
 
 
 def write_json(path, data):
