@@ -136,6 +136,7 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="leveled">Leveled</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="replaced">Replaced</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="unmeasured">Not measured</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="custom">Custom fix</button>
                         </div>
                         <input id="alSearch" type="search" class="form-control form-control-sm w-auto ms-auto" placeholder="Search songs" aria-label="Search songs">
                     </div>

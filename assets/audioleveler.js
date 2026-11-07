@@ -110,11 +110,17 @@
             if (mode === 'none') { return { text: 'Fine as is', note: note.join(' · '), rec: true }; }
         }
         var gain = target - I;
+        // Same rule as the worker: an MP3 changed losslessly lands to within
+        // half a step, so for those "fine" means within that half step.
+        var fineDb = mp3Lossless ? LOSSLESS_STEP / 2 + 0.03 : NEAR_TARGET_DB;
         var text;
         if (mode === 'compress') {
             text = 'Compression, then to ' + target + ' LUFS · re-encode';
         } else if (mode === 'limit') {
             var trim = TP === null ? 0 : TP + gain - ceiling;
+            if (Math.abs(gain) < fineDb && (TP === null || TP <= ceiling + PEAK_TOLERANCE_DB)) {
+                return { text: 'Fine as is', note: note.join(' · '), rec: rec };
+            }
             if (trim <= PEAK_TOLERANCE_DB) {
                 text = dB(gain) + (mp3Lossless ? ' · lossless' : ' · re-encode');
             } else {
@@ -122,7 +128,7 @@
             }
         } else { // volume
             if (TP !== null && TP + gain > ceiling + PEAK_TOLERANCE_DB) { gain = ceiling - TP; }
-            if (Math.abs(gain) < NEAR_TARGET_DB && !(TP !== null && TP > ceiling)) {
+            if (Math.abs(target - I) < fineDb && !(TP !== null && TP > ceiling + PEAK_TOLERANCE_DB)) {
                 return { text: choice === 'background' ? 'Already at background level' : 'Fine as is', note: note.join(' · '), rec: rec };
             }
             var lossless = false;
@@ -341,6 +347,7 @@
                 case 'clip': return clips(f);
                 case 'leveled': return !!f.leveled;
                 case 'replaced': return !!f.changedSinceLeveled;
+                case 'custom': return !!f.choice && f.choice !== 'default';
                 case 'unmeasured': return !hasLufs(f);
                 default: return true;
             }
@@ -610,7 +617,23 @@
         $id('alSetFix').addEventListener('change', function () {
             var v = this.value;
             this.value = '';
-            if (v) { setChoice(selectedNames(), v); }
+            if (!v) { return; }
+            // Background and Skip are deliberate per-song decisions: a bulk
+            // change leaves them alone, unless only such songs are selected
+            // (then they're clearly what you mean to change).
+            var sel = files.filter(function (f) { return selected[f.name]; });
+            var kept = sel.filter(function (f) {
+                return (f.choice === 'background' || f.choice === 'skip') && f.choice !== v;
+            });
+            var change = kept.length === sel.length ? sel : sel.filter(function (f) { return kept.indexOf(f) < 0; });
+            setChoice(change.map(function (f) { return f.name; }), v);
+            if (kept.length && change.length < sel.length) {
+                var bg = kept.filter(function (f) { return f.choice === 'background'; }).length;
+                var sk = kept.length - bg;
+                toast('Kept ' + [bg ? bg + ' Background' : '', sk ? sk + ' Skip' : ''].filter(Boolean).join(' and ') +
+                    ' song' + (kept.length === 1 ? '' : 's') + ' as they were. Change those from their own dropdown, ' +
+                    'or select only them and use Set fix.');
+            }
         });
         $id('alRows').addEventListener('click', function (e) {
             var btn = e.target.closest('.al-restore');

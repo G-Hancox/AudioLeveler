@@ -436,6 +436,15 @@ class Worker:
             return bpath, True
         return path, False
 
+    def saved_measurement(self, name, src, from_backup):
+        """The Measure step's numbers for the song as it is now, if still valid."""
+        if from_backup:
+            return None
+        c = self.analysis.get(name)
+        if c and same_sig(c, file_sig(src)) and c.get("I") is not None and c.get("len"):
+            return {k: c.get(k) for k in ("I", "TP", "LRA", "len")}
+        return None
+
     def analyze_one(self, name, force=False):
         path = os.path.join(self.music, name)
         sig = file_sig(path)
@@ -506,19 +515,23 @@ class Worker:
         src, from_backup = self.original_for(name)
 
         info = probe(src)
+        # Reuse the Measure step's numbers when they belong to this exact
+        # file, so songs that are already fine are passed over instantly.
+        saved = self.saved_measurement(name, src, from_backup)
         if mode == "auto":
-            m = measure(src)
+            m = saved or measure(src)
             if m["I"] is None:
                 return False, "skipped: song is silent or too short to measure"
             mode = recommend(m["I"], m["TP"], target, ceiling)
             if mode == "none":
                 mode = "volume"  # within half a dB: the near-target rule below leaves it be
         else:
-            m = None
+            m = saved
         pre = COMPRESSOR if mode == "compress" else None
+        unfiltered = m
         if m is None or pre:
             m = measure(src, pre)
-        before = m["I"] if not pre else measure(src)["I"]
+        before = m["I"] if not pre else (unfiltered or measure(src))["I"]
         if m["I"] is None:
             return False, "skipped: song is silent or too short to measure"
 
@@ -696,10 +709,26 @@ class Worker:
                 song_mode, song_target = "volume", max(-40.0, target - bg_offset)
             elif choice != "default":
                 song_mode = choice
+            path = os.path.join(self.music, name)
+            # Fine as is: the song as it stands is already within half a dB of
+            # its target with peaks under the ceiling, exactly what the page
+            # shows as "Fine as is". Leave it alone, however it got there.
+            # (Compression is a deliberate change, so it's never skipped.)
+            if song_mode != "compress":
+                cur = self.saved_measurement(name, path, False) if os.path.exists(path) else None
+                # An MP3 changed losslessly can only land to within half a 1.5 dB
+                # step, so for those "fine" means within that half step.
+                fine_db = NEAR_TARGET_DB
+                if name.lower().endswith(".mp3") and self.req.get("lossless", True):
+                    fine_db = mp3lossless.STEP_DB / 2 + 0.03
+                if (cur and abs(cur["I"] - song_target) < fine_db
+                        and (cur["TP"] is None or cur["TP"] <= ceiling + PEAK_TOLERANCE_DB)):
+                    self.result(name, True, "fine as is (%.1f LUFS), left alone" % cur["I"])
+                    self.save_job(done=i + 1)
+                    continue
             # Already leveled with exactly these settings (say, before a job
             # was cancelled): nothing to redo, so carry on where it stopped.
             rec = self.leveled.get(name)
-            path = os.path.join(self.music, name)
             if (rec and os.path.exists(path) and same_sig(rec, file_sig(path))
                     and rec.get("asked") == song_mode and rec.get("target") == song_target
                     and rec.get("ceiling") == ceiling
