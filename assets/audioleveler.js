@@ -197,6 +197,18 @@
             '<div class="al-meter-target" style="left:' + pos(options.target).toFixed(1) + '%"></div></div>';
     }
 
+    // Sort songs by title, not raw file name: skip a leading track number
+    // ("01 - ", "13 ", "07."), ignore case, and order numbers naturally.
+    // A name that merely starts with a digit (like "2WEI ...") is left alone.
+    function titleKey(name) {
+        return name.replace(/^\s*\d{1,3}(?:\s*[-_.)]\s*|\s+)(?=\S)/, '');
+    }
+
+    function byTitle(a, b) {
+        return titleKey(a.name).localeCompare(titleKey(b.name), undefined, { sensitivity: 'base', numeric: true }) ||
+            a.name.localeCompare(b.name, undefined, { numeric: true });
+    }
+
     function visibleFiles() {
         var q = search.trim().toLowerCase();
         var list = files.filter(function (f) {
@@ -210,12 +222,12 @@
             }
         });
         list.sort(function (a, b) {
-            if (sortKey === 'name') { return sortDir * a.name.localeCompare(b.name); }
+            if (sortKey === 'name') { return sortDir * byTitle(a, b); }
             var av = sortKey === 'lufs' ? (hasLufs(a) ? a.lufs : null) : (a.measured ? a.peak : null);
             var bv = sortKey === 'lufs' ? (hasLufs(b) ? b.lufs : null) : (b.measured ? b.peak : null);
-            if (av === null || av === undefined) { return (bv === null || bv === undefined) ? a.name.localeCompare(b.name) : 1; }
+            if (av === null || av === undefined) { return (bv === null || bv === undefined) ? byTitle(a, b) : 1; }
             if (bv === null || bv === undefined) { return -1; }
-            return sortDir * (av - bv) || a.name.localeCompare(b.name);
+            return sortDir * (av - bv) || byTitle(a, b);
         });
         return list;
     }
