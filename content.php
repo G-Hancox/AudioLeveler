@@ -41,38 +41,18 @@
                     </select>
                     <div class="form-text mb-3">For songs set to <i>Background</i> in the Fix column, like ambiance and off-hours music: heard, but under the show.</div>
 
-                    <div class="fw-semibold mb-1">Leveling type</div>
-                    <div class="form-text mt-0 mb-2">For songs left on <i>Default</i> in the Fix column. You can pick a different fix for any song.</div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="alMode" id="alModeAuto" value="auto">
-                        <label class="form-check-label" for="alModeAuto">
-                            <span class="fw-semibold">Recommended per song</span> <span class="badge text-bg-secondary">default</span><br>
-                            <span class="form-text">Picks the gentlest fix for each song: a plain volume change (lossless for MP3s) whenever it's enough,
-                                the limiter only when it takes 3 dB or less of peak trimming, and otherwise volume only, landing a little quieter
-                                rather than squashing the song. Never compresses on its own.</span>
-                        </label>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="alMode" id="alModeVolume" value="volume">
-                        <label class="form-check-label" for="alModeVolume">
-                            <span class="fw-semibold">Volume only</span><br>
-                            <span class="form-text">Just turns each song up or down. Never changes the sound, but a quiet song with big peaks may not reach the target.</span>
-                        </label>
-                    </div>
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="alMode" id="alModeLimit" value="limit">
-                        <label class="form-check-label" for="alModeLimit">
-                            <span class="fw-semibold">Loudness match + peak limiter</span><br>
-                            <span class="form-text">Turns songs up or down and gently catches the peaks, so every song hits the target without clipping.</span>
-                        </label>
-                    </div>
-                    <div class="form-check mb-3">
-                        <input class="form-check-input" type="radio" name="alMode" id="alModeCompress" value="compress">
-                        <label class="form-check-label" for="alModeCompress">
-                            <span class="fw-semibold">Light compression</span><br>
-                            <span class="form-text">Also evens out quiet intros and loud choruses. Good outdoors or over FM, where quiet parts get lost.</span>
-                        </label>
-                    </div>
+                    <div class="fw-semibold mb-1">Fixes</div>
+                    <div class="form-text mt-0 mb-1">Each song uses the fix shown in its <i>Fix</i> column. Every song starts on <b>Recommended</b>;
+                        pick another for any song, or tick several and use <b>Set fix</b>.</div>
+                    <ul class="form-text ps-3 mb-3">
+                        <li><b>Recommended</b>: the gentlest fix that does the job. A plain volume change (lossless for MP3s) whenever it's enough,
+                            the limiter only when it takes 3 dB or less of peak trimming, and otherwise volume only, landing a little quieter
+                            rather than squashing the song. Never compresses on its own.</li>
+                        <li><b>Volume only</b>: just turns the song up or down. Never changes the sound, but a quiet song with big peaks may not reach the target.</li>
+                        <li><b>Limiter</b>: turns the song up or down and gently catches the peaks, so it hits the target without clipping.</li>
+                        <li><b>Compression</b>: also evens out quiet intros and loud choruses. Good outdoors or over FM, where quiet parts get lost.</li>
+                        <li><b>Background</b>: deliberately under the show, by the Background level above. <b>Skip</b>: left alone.</li>
+                    </ul>
 
                     <div class="form-check form-switch mb-1">
                         <input class="form-check-input" type="checkbox" role="switch" id="alLossless">
@@ -147,8 +127,7 @@
                         <button id="alClearSel" type="button" class="btn btn-sm btn-link d-none">Clear</button>
                         <select id="alSetFix" class="form-select form-select-sm w-auto" aria-label="Set the fix for the selected songs" disabled>
                             <option value="">Set fix&hellip;</option>
-                            <option value="default">Default</option>
-                            <option value="auto">Recommended</option>
+                            <option value="default">Recommended</option>
                             <option value="volume">Volume only</option>
                             <option value="limit">Limiter</option>
                             <option value="compress">Compression</option>

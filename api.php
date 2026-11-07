@@ -355,7 +355,9 @@ function AudioLevelerLevel()
 {
     $body = AudioLevelerBody();
     $opt = array_merge(AudioLevelerOptions(), $body);
-    $mode = in_array($opt['mode'], array('auto', 'volume', 'limit', 'compress')) ? $opt['mode'] : 'auto';
+    // Songs without a fix of their own always use the recommendation. (An
+    // older saved 'mode' setting from before per-song fixes is ignored.)
+    $mode = 'auto';
     return AudioLevelerStart('level', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
         'target' => max(-30, min(-6, floatval($opt['target']))),

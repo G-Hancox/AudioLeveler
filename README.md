@@ -2,20 +2,20 @@
 
 An FPP plugin that makes every song in your show play at the same loudness, so nothing whispers and nothing blasts.
 
-It measures each song in FPP's music folder (EBU R128 integrated loudness in LUFS, plus true peak), then levels it to a target you choose:
+It measures each song in FPP's music folder (EBU R128 integrated loudness in LUFS, plus true peak), then levels it to a target you choose. Each song gets one of these fixes. Every song starts on **Recommended**, and you can change any song's fix.
 
-| Leveling type | What it does |
+| Fix | What it does |
 |---|---|
-| **Recommended per song** (default) | The gentlest fix for each song, chosen after measuring: nothing if it's within 0.5 dB; a plain volume change (lossless for MP3s) whenever that reaches the target, or gets within 1 dB of it, without peaks going over the ceiling; the limiter only when it takes 3 dB or less of peak trimming; otherwise volume only, landing a little under the target rather than squashing the song. Never compresses on its own. |
+| **Recommended** (every song starts here) | The gentlest fix for each song, chosen after measuring: nothing if it's within 0.5 dB; a plain volume change (lossless for MP3s) whenever that reaches the target, or gets within 1 dB of it, without peaks going over the ceiling; the limiter only when it takes 3 dB or less of peak trimming; otherwise volume only, landing a little under the target rather than squashing the song. Never compresses on its own. |
 | **Volume only** | Turns each song up or down. Never changes the sound, but a quiet song with big peaks may stop short of the target instead of clipping. |
-| **Loudness match + peak limiter** | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
-| **Light compression** | Also narrows the gap between a song's quiet and loud parts (2:1 above -20 dBFS). Good outdoors or over FM. |
+| **Limiter** | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
+| **Compression** | Also narrows the gap between a song's quiet and loud parts (2:1 above -20 dBFS). Good outdoors or over FM. |
 
 Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
 
 ### Per-song fixes
 
-After measuring, a **Fix** column shows what leveling will do to each song (for example `−10.5 dB · lossless`, `+1.3 dB · limiter trims 2.6 dB`, `Fine as is`), with notes for very dynamic songs (compression available) and long tracks (background?). Each song has a dropdown: **Default** (follows the settings), **Recommended**, **Volume only**, **Limiter**, **Compression**, **Background** or **Skip**. Several songs can be set at once from the selection bar. Choices are saved in `plugindata/AudioLeveler/choices.json`.
+After measuring, a **Fix** column shows what leveling will do to each song (for example `−10.5 dB · lossless`, `+1.3 dB · limiter trims 2.6 dB`, `Fine as is`), with notes for very dynamic songs (compression available) and long tracks (background?). Each song has a dropdown: **Recommended** (where every song starts), **Volume only**, **Limiter**, **Compression**, **Background** or **Skip**. Several songs can be set at once with **Set fix** in the selection bar. It leaves Background and Skip songs alone unless only those are selected. Choices are saved in `plugindata/AudioLeveler/choices.json`.
 
 **Background** levels a song deliberately quieter than the show, 10 dB under the target by default and adjustable. It's meant for ambiance and off-hours tracks that should be heard but sit under everything else. **Skip** leaves a song alone even on *Level all*.
 

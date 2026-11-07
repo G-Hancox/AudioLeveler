@@ -62,7 +62,7 @@
 
     var MODE_NAMES = { auto: 'recommended', volume: 'volume only', limit: 'limiter', compress: 'compression' };
     var CHOICE_NAMES = {
-        'default': 'Default', auto: 'Recommended', volume: 'Volume only', limit: 'Limiter',
+        'default': 'Recommended', volume: 'Volume only', limit: 'Limiter',
         compress: 'Compression', background: 'Background', skip: 'Skip'
     };
 
@@ -90,8 +90,10 @@
     // What leveling would do to this song now: {text, note, rec}
     function planFor(f) {
         if (!hasLufs(f)) { return { text: 'Measure first', note: '' }; }
-        var choice = f.choice || 'default';
-        var mode = choice === 'default' ? options.mode : choice;
+        // Every song starts on Recommended ('default'); an older saved
+        // 'auto' choice means the same thing.
+        var choice = (!f.choice || f.choice === 'auto') ? 'default' : f.choice;
+        var mode = choice === 'default' ? 'auto' : choice;
         var target = options.target, ceiling = options.ceiling;
         var I = f.lufs, TP = (f.peak === null || f.peak === undefined) ? null : f.peak;
         var mp3Lossless = /\.mp3$/i.test(f.name) && options.lossless !== false;
@@ -155,10 +157,9 @@
     }
 
     function fixHtml(f, i) {
-        var choice = f.choice || 'default';
+        var choice = (!f.choice || f.choice === 'auto') ? 'default' : f.choice;
         var opts = Object.keys(CHOICE_NAMES).map(function (k) {
             var label = CHOICE_NAMES[k];
-            if (k === 'default') { label += ' (' + (MODE_NAMES[options.mode] || options.mode) + ')'; }
             return '<option value="' + k + '"' + (k === choice ? ' selected' : '') + '>' + esc(label) + '</option>';
         }).join('');
         var plan = planFor(f);
@@ -179,11 +180,10 @@
     }
 
     function readOptions() {
-        var mode = document.querySelector('input[name="alMode"]:checked');
         return {
             target: currentTarget(),
             ceiling: parseFloat($id('alCeiling').value),
-            mode: mode ? mode.value : 'auto',
+            mode: 'auto',
             bgOffset: parseFloat($id('alBgOffset').value) || 10,
             backup: $id('alBackup').checked,
             waitIdle: $id('alWaitIdle').checked,
@@ -207,8 +207,6 @@
             cs.appendChild(op);
         }
         cs.value = c;
-        var radio = document.querySelector('input[name="alMode"][value="' + o.mode + '"]');
-        if (radio) { radio.checked = true; }
         $id('alBackup').checked = !!o.backup;
         $id('alWaitIdle').checked = !!o.waitIdle;
         $id('alLossless').checked = o.lossless !== false;
@@ -347,7 +345,7 @@
                 case 'clip': return clips(f);
                 case 'leveled': return !!f.leveled;
                 case 'replaced': return !!f.changedSinceLeveled;
-                case 'custom': return !!f.choice && f.choice !== 'default';
+                case 'custom': return !!f.choice && f.choice !== 'default' && f.choice !== 'auto';
                 case 'unmeasured': return !hasLufs(f);
                 default: return true;
             }
@@ -595,9 +593,6 @@
         });
         $id('alTargetCustom').addEventListener('change', saveOptions);
         $id('alCeiling').addEventListener('change', saveOptions);
-        Array.prototype.forEach.call(document.querySelectorAll('input[name="alMode"]'), function (r) {
-            r.addEventListener('change', saveOptions);
-        });
         $id('alBackup').addEventListener('change', saveOptions);
         $id('alWaitIdle').addEventListener('change', saveOptions);
         $id('alLossless').addEventListener('change', saveOptions);

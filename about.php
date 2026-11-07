@@ -27,20 +27,21 @@
 
             <h6 class="fw-semibold">Choosing a fix per song</h6>
             <ul>
-                <li><b>Default</b> follows the leveling type in the settings (normally <i>Recommended per song</i>).</li>
-                <li><b>Recommended</b>, <b>Volume only</b>, <b>Limiter</b> or <b>Compression</b> pick that treatment for this song.</li>
+                <li>Every song starts on <b>Recommended</b>, the gentlest fix described above.</li>
+                <li><b>Volume only</b>, <b>Limiter</b> or <b>Compression</b> pick that treatment for this song (described below).</li>
                 <li><b>Background</b> levels the song deliberately quieter than the show (10 dB under the target by default, set under <i>Background level</i>),
                     for ambiance and off-hours music that should be heard but sit under everything else.</li>
                 <li><b>Skip</b> leaves the song alone, even when you press <b>Level all</b>.</li>
             </ul>
-            <p>Choices are saved per song and kept until you change them.</p>
+            <p>Choices are saved per song and kept until you change them. To change many songs at once, tick them and use <b>Set fix</b>;
+               it leaves Background and Skip songs as they are unless only those are selected. The <b>Custom fix</b> filter lists every song
+               that isn't on Recommended.</p>
 
-            <h6 class="fw-semibold">Leveling types</h6>
+            <h6 class="fw-semibold">The fixes</h6>
             <ul>
-                <li><b>Recommended per song</b> (default): the gentlest fix for each song, as described above.</li>
-                <li><b>Volume only</b>: turns each song up or down and nothing else. If a quiet song has big peaks, it stops short of the target rather than clip.</li>
-                <li><b>Loudness match + peak limiter</b>: turns songs up or down, then catches any peaks that would go over the ceiling. Every song reaches the target.</li>
-                <li><b>Light compression</b>: also narrows the gap between quiet and loud parts of a song (2:1 above -20 dB). Useful outdoors or over an FM transmitter, where soft intros get lost.</li>
+                <li><b>Volume only</b>: turns the song up or down and nothing else. If a quiet song has big peaks, it stops short of the target rather than clip.</li>
+                <li><b>Limiter</b>: turns the song up or down, then catches any peaks that would go over the ceiling, so it reaches the target.</li>
+                <li><b>Compression</b>: also narrows the gap between quiet and loud parts of a song (2:1 above -20 dB). Useful outdoors or over an FM transmitter, where soft intros get lost.</li>
             </ul>
 
             <h6 class="fw-semibold">Choosing a target</h6>
