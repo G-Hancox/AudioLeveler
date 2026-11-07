@@ -41,6 +41,23 @@
                If you upload a new version of a song, it becomes the new original. Use <b>Delete all backups</b> to free up space.
                Backups are kept if you uninstall the plugin so you never lose an original; delete that folder yourself if you no longer want them.</p>
 
+            <h6 class="fw-semibold">How long it takes</h6>
+            <p>Leveling is slow on a Pi: each song is measured, re-encoded and then checked again, which often takes a minute or more per song,
+               so a whole library can take a few hours. Measuring alone is quicker. It's safe to start a big job and leave it running overnight;
+               it waits for shows and you can close the browser. Speed doesn't affect quality.</p>
+
+            <h6 class="fw-semibold">Uploading a song again</h6>
+            <p>If you upload a song again with the same name (for example after fixing a sequence, or when xLights' FPP Connect sends the audio
+               along with a sequence), the new upload <b>replaces the leveled copy</b>. Audio Leveler notices: the song shows
+               <span class="badge text-bg-warning">Replaced since leveling</span> and appears under the <b>Replaced</b> filter.
+               Level it again and it's back on target; the new upload becomes the new original for backups.</p>
+
+            <h6 class="fw-semibold">Audio Leveler or FPP's Normalize?</h6>
+            <p>Newer FPP versions have a <b>Normalize</b> button in File Manager that adjusts each song's volume during playback without changing the file.
+               That's lossless and fine for many shows. Audio Leveler rewrites the files instead, which lets it use a peak limiter or light compression,
+               so quiet songs reach the full target and songs that already clip are fixed. Use one or the other for a given song;
+               FPP ignores its own Normalize setting for a file that has been changed since it was normalized, so they won't stack.</p>
+
             <h6 class="fw-semibold">Supported files</h6>
             <p>MP3, M4A/AAC, OGG, WAV and FLAC in FPP's music folder. Songs are written back in their own format and sample rate.
                MP3s are written at no less than 192 kbps, so re-encoding doesn't dull them.</p>

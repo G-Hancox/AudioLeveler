@@ -217,6 +217,7 @@
                 case 'off': return offTarget(f);
                 case 'clip': return clips(f);
                 case 'leveled': return !!f.leveled;
+                case 'replaced': return !!f.changedSinceLeveled;
                 case 'unmeasured': return !hasLufs(f);
                 default: return true;
             }

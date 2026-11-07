@@ -91,6 +91,12 @@
                     </div>
                     <div id="alResult" class="d-none mb-3"></div>
 
+                    <p class="small text-body-secondary mb-3">
+                        Leveling is slow on a Pi, often a minute or more per song, so a whole library can take a few hours.
+                        It's fine to leave it running overnight; it waits for shows. Uploading a song again (including from xLights)
+                        replaces the leveled copy, and it's then marked <b>Replaced since leveling</b>. Just level it again.
+                    </p>
+
                     <!-- At-a-glance numbers -->
                     <div id="alStats" class="row g-2 mb-3"></div>
 
@@ -101,6 +107,7 @@
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="off">Off target</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="clip">Clipping</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="leveled">Leveled</button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="replaced">Replaced</button>
                             <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" aria-pressed="false" data-filter="unmeasured">Not measured</button>
                         </div>
                         <input id="alSearch" type="search" class="form-control form-control-sm w-auto ms-auto" placeholder="Search songs" aria-label="Search songs">

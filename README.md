@@ -28,13 +28,20 @@ Target presets are -16, -14 (default), -12 and -10 LUFS, or you can enter a cust
 3. Press **Level all**, or tick songs and press **Level selected**.
 4. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
 
+## Good to know
+
+- **Leveling is slow on a Pi.** Each song is measured, re-encoded and checked again, which often takes a minute or more per song, so a whole library can take a few hours. It's safe to leave a big job running overnight, because it waits for shows and keeps going with the browser closed. Speed doesn't affect quality.
+- **Uploading a song again replaces the leveled copy.** This includes re-uploading after fixing a sequence, or xLights' FPP Connect sending the audio along with a sequence. The plugin flags the song as *Replaced since leveling* (there's a **Replaced** filter for it). Level it again to bring it back on target. The new upload becomes the new original for backups.
+
 ## Requirements
 
 `ffmpeg` and `python3`, both included on standard FPP images. `ffmpeg` is declared as a dependency and installed if missing.
 
-## Relation to FPP's built-in Normalize
+## Audio Leveler or FPP's built-in Normalize?
 
-Newer FPP builds include a Normalize button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless, but there is no limiter, so songs can only be raised as far as their peaks allow. This plugin rewrites the files instead, which lets it limit or compress so songs can reach louder targets. It also works on older FPP versions. FPP skips its own playback gain for any file whose size has changed, so the two never stack.
+Newer FPP builds include a **Normalize** button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless and covers many shows. It has no limiter, though, so a quiet song can only be raised as far as its peaks allow, and songs that already clip stay clipped.
+
+Audio Leveler rewrites the files instead. That lets it use a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, and existing clipping is fixed. It also works on FPP releases that don't have Normalize. Use one or the other for a given song. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
 
 ## Files
 
