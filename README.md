@@ -13,7 +13,7 @@ It measures each song in FPP's music folder (EBU R128 integrated loudness in LUF
 
 Target presets are -18, -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
 
-**Target advisor:** once songs are measured, a table under the target shows, for each preset, how many of your show songs get a plain volume change, how many need the gentle limiter and how many would land a little quieter instead of being squashed (Background and Skip songs aren't counted). It also names the loudest target every song reaches with a plain volume change. **Use** switches to that target.
+**Target advisor:** once songs are measured, a table under the target shows, for each preset, how many of your show songs get a plain volume change, how many need the gentle limiter and how many would land a little quieter instead of being squashed (Background and Skip songs aren't counted). It also names the loudest target every song reaches with a plain volume change. Tap a level in the table to use it.
 
 ### Per-song fixes
 
@@ -25,9 +25,13 @@ After measuring, a **Fix** column shows what leveling will do to each song (for 
 
 Outdoor speakers and FM barely reproduce deep bass, so a bass-heavy song can read on target in LUFS yet sound quieter outside. With **Match songs by: How they sound on outdoor speakers** (the default), the Measure step also takes each song's *speaker level*: the median short-term loudness with everything under 120 Hz removed (two 120 Hz high-pass stages), skipping the first 3 s and near-silence. That's measured in the same decode pass. Each song's target then moves by `clamp(LUFS − speaker level − 3, −4, +4)` dB, and everything else uses that target: the recommendation, the limiter, Background, and "Fine as is". This is the same method as FPP's Normalize, and in testing its gains matched FPP's to 0.1 dB. Choose **Plain loudness (LUFS)** to turn it off.
 
-## Playback gain (FPP versions with File Manager > Normalize)
+## Playback gain through FPP's Normalize (FPP versions that have it)
 
-Newer FPP applies a per-song gain at playback from `config/media_gain.json`; that's what File Manager's Normalize writes, and fppd ignores an entry once the file's size changes. Where this exists (detected by FPP's `www/common/audioNormalize.inc.php`), with **Use FPP's playback gain for volume changes** on (the default), a song that only needs a volume change is leveled there instead of in the file. That makes it exact (0.1 dB), lossless for every format, and the file is left as uploaded. A file the plugin rewrote earlier gets its original back first. Songs that need the limiter or compression are rewritten as before, and their stale gain entries are removed. Entries are written under FPP's own lock (`tmp/media_gain.lock`) with `"source": "AudioLeveler"`. Restore removes them. The page folds any gain into the loudness it shows, including gains set by FPP's own Normalize, which it labels as such.
+Newer FPP can turn each song or video up or down as it plays (File Manager > **Normalize**), and ignores that gain once the file's size changes. Where FPP has it, with **Use FPP's Normalize for volume changes** on (the default), a song that only needs a volume change is leveled there instead of in the file: exact (0.1 dB), lossless for every format, and the file is left as uploaded. A file the plugin rewrote earlier gets its original back first.
+
+The gains are FPP's own data, so the plugin never reads or writes the file they're kept in. It asks FPP's Normalize to set or remove them, with the same request File Manager makes (`run_normalize.php`, one file at a time, with the song's target, the peak ceiling and the matching mode). FPP's Normalize measures the song and works out the gain with the same method the plugin uses, so the results match. If someone is already running a Normalize, the plugin waits its turn (up to 5 minutes), and if FPP's Normalize can't do it, the song's file is leveled instead. The page reads the gains with FPP's own helper (`AN_LoadGains()`), shows them in each song's loudness, and labels gains set from File Manager as *FPP Normalize*. Songs that need the limiter or compression are rewritten as before, and any gain left for them is removed through FPP's Normalize. Restore removes the gain the same way.
+
+Uninstalling the plugin leaves those gains in place, just as rewritten songs stay leveled. Remove them in File Manager > Normalize > Remove Normalization if you want songs played as recorded.
 
 ## Sound quality
 
@@ -62,7 +66,7 @@ The videos in FPP's videos folder get their own **Videos** tab beside **Songs** 
 - **Only the sound is touched.** Where FPP applies playback gain to videos (newer FPP), a volume-only fix goes there and the file isn't changed at all. Otherwise the file is rewritten with the picture, subtitles and any extra sound tracks copied bit for bit (`-c copy`); only the first sound track is re-encoded (AAC at 256 to 320 kbps for MP4/MOV/MKV, Opus for WebM, MP3 320 kbps for AVI). In testing, the picture stream was byte-identical and audio stayed within 7 ms of the picture.
 - Videos with no sound track aren't listed at all (the Videos tab says how many were left out), and jobs skip them. Finding out is a quick look at each video's header (ffprobe, no decoding), done in the background by `bin/probe_videos.py` (two at a time, low priority) so the page opens at once even with hundreds of videos; videos appear on the tab as they're checked. Each answer is remembered until the file changes, so a video re-uploaded with sound shows up.
 - Videos are backed up like songs (in `backups/videos/`), and they can be large, so keep an eye on free space.
-- Internally a video is named `videos/<file>`, the same key FPP's own Normalize uses in `media_gain.json`.
+- Internally a video is named `videos/<file>`, the same name FPP's own Normalize uses for it.
 
 ## Automatic leveling
 
@@ -83,24 +87,28 @@ Each check is a quick file comparison run by `bin/auto_check.sh`, which returns 
 
 ## Requirements
 
-`ffmpeg` and `python3`, both included on standard FPP images. `ffmpeg` is declared as a dependency and installed if missing.
+FPP 10.0 or later, with `ffmpeg` and `python3` (both on standard FPP images; `ffmpeg` is declared as a dependency). FPPD must be running to measure or level: all the plugin's background work is started by fppd, through its **Audio Leveler: Start Job** command, never by the web server.
+
+The settings are FPP setting rows (`settings.json`, drawn with `PrintPluginSetting` and saved by FPP to `config/plugin.AudioLeveler`).
 
 ## Audio Leveler or FPP's built-in Normalize?
 
 Newer FPP builds include a **Normalize** button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless and covers many shows. It has no limiter, though, so a quiet song can only be raised as far as its peaks allow.
 
-Audio Leveler rewrites the files instead (losslessly for MP3s that only need a volume change). That lets it use a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, with every peak kept under the ceiling. It also works on FPP releases that don't have Normalize. Use one or the other for a given song. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
+Audio Leveler builds on it: where FPP has Normalize, songs that only need a volume change are leveled through it (see above). Songs that need more get their file rewritten (losslessly for MP3s that only need a volume change), with a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, with every peak kept under the ceiling. On FPP releases without Normalize, files are rewritten for every fix. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
 
 ## Files
 
 | Path | Purpose |
 |---|---|
 | `content.php`, `assets/audioleveler.js` | The Content Setup page |
-| `api.php` | `/api/plugin/AudioLeveler/...` endpoints |
+| `api.php` | `/api/plugin/AudioLeveler/...` endpoints (also loaded by `content.php` for its helpers) |
 | `bin/leveler.py` | Background worker that runs ffmpeg |
 | `bin/auto_check.sh`, `callbacks.sh` | Automatic leveling triggers (fppd start, playlist stop) |
 | `bin/mp3lossless.py` | Lossless MP3 volume change (frame `global_gain` edit, as MP3Gain does) |
-| `commands/start_job.sh` | FPP command "Audio Leveler: Start Job": the page asks fppd to run it, and it starts the worker. On its own it does nothing. |
+| `commands/start_job.sh` | FPP command "Audio Leveler: Start Job": the page asks fppd to run it for a queued job, the video sound check or an automatic-leveling check. Run on its own it does nothing more than that. |
+| `bin/probe_videos.py` | Background check for which videos have a sound track |
+| `settings.json` | The settings, drawn with FPP's `PrintPluginSetting` |
 | `callbacks.sh` | Lets fppd load the plugin without a restart, and asks a running job to stop after its current song when fppd stops or unloads the plugin |
 | `about.php` | Help page |
 

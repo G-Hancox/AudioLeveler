@@ -1,8 +1,17 @@
 [
     {
         "name": "Audio Leveler: Start Job",
-        "description": "Starts the measuring, leveling or restoring job queued on the Audio Leveler page. The page runs this itself; on its own it does nothing.",
+        "description": "Runs Audio Leveler's background work under fppd. The Audio Leveler page uses it; you don't need to. Queued job: starts the measuring, leveling or restoring job queued on the page in the last 30 seconds (on its own it does nothing). Check videos for sound: looks at any video not checked yet. Level new uploads: levels new and replaced songs now, only if automatic leveling is switched on.",
         "script": "start_job.sh",
-        "args": []
+        "args": [
+            {
+                "name": "Task",
+                "description": "What to run",
+                "type": "string",
+                "contents": ["Queued job", "Check videos for sound", "Level new uploads"],
+                "default": "Queued job",
+                "optional": true
+            }
+        ]
     }
 ]

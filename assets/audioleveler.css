@@ -74,3 +74,10 @@
         min-width: 10rem;
     }
 }
+
+/* Target advisor: tight enough to fit a phone without scrolling sideways. */
+#audioLeveler #alAdvisor th,
+#audioLeveler #alAdvisor td {
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+}

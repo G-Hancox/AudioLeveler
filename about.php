@@ -59,14 +59,14 @@
             <p>Once songs are measured, a table under the target shows what each choice would mean for <i>your</i> songs:
                how many get a plain volume change, how many need the gentle limiter, and how many would land a little quieter
                rather than be squashed. It also gives the loudest target every song reaches with a plain volume change.
-               Press <b>Use</b> on a row to switch to that target.</p>
+               Tap a level in the table to switch to it.</p>
 
             <h6 class="fw-semibold">Your sequences stay in sync</h6>
             <p>Songs keep their file names, so sequences and playlists still find them. Each leveled song is checked against the original,
                and if its length differs by more than 0.15 seconds, it isn't used and the original is kept.</p>
 
             <h6 class="fw-semibold">Safe during a show</h6>
-            <p>All work runs in the background at the lowest priority, started by fppd. (That's what the <b>Audio Leveler: Start Job</b> command in FPP's command lists is for; it does nothing on its own.) By default it waits until no show is playing. Even with that turned off,
+            <p>All work runs in the background at the lowest priority, started by FPPD, so FPPD needs to be running. (That's what the <b>Audio Leveler: Start Job</b> command in FPP's command lists is for; you don't need to use it yourself.) By default it waits until no show is playing. Even with that turned off,
                a song is never replaced while it is playing. A new file is written next to the old one and swapped in only once it has been checked,
                so a song is never left half-written.</p>
 
@@ -109,14 +109,15 @@
                so quiet songs reach the full target with every peak kept under the ceiling. Use one or the other for a given song;
                FPP ignores its own Normalize setting for a file that has been changed since it was normalized, so they won't stack.</p>
 
-            <h6 class="fw-semibold">Playback gain (newer FPP versions)</h6>
-            <p>Newer FPP versions can turn a song up or down as it plays; File Manager's <b>Normalize</b> uses this. On those versions,
-               with <b>Use FPP's playback gain for volume changes</b> on (it is by default), a song that only needs a volume change is
-               leveled that way instead of in its file. That's exact to a tenth of a dB, lossless for every format, and the file stays exactly
+            <h6 class="fw-semibold">FPP's Normalize (newer FPP versions)</h6>
+            <p>Newer FPP versions can turn a song up or down as it plays; that's File Manager's <b>Normalize</b>. On those versions,
+               with <b>Use FPP's Normalize for volume changes</b> on (it is by default), a song that only needs a volume change is
+               leveled by FPP's Normalize instead of in its file. That's exact to a tenth of a dB, lossless for every format, and the file stays exactly
                as uploaded. Only songs that need the limiter or compression have their file rewritten. A song leveled this way shows
-               <i>playback gain</i> in its status, and <b>Restore</b> simply removes the gain. Songs FPP's own Normalize adjusted are shown as
-               <span class="badge text-bg-info">FPP Normalize</span>, and their numbers include that gain. On older FPP versions this setting doesn't appear
-               and everything works as described below.</p>
+               <i>playback gain</i> in its status, and <b>Restore</b> simply removes the gain. Songs you normalized yourself in File Manager are shown as
+               <span class="badge text-bg-info">FPP Normalize</span>, and their numbers include that gain. Uninstalling Audio Leveler leaves
+               these gains in place; remove them in File Manager if you want songs played as recorded. On older FPP versions this setting
+               doesn't appear and every fix changes the file.</p>
 
             <h6 class="fw-semibold">Sound quality</h6>
             <p>Each song gets the gentlest treatment that does the job:</p>

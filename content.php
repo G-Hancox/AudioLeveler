@@ -1,3 +1,30 @@
+<?php
+// Audio Leveler page. The settings are FPP setting rows from settings.json
+// (PrintPluginSetting), saved by FPP itself; the song list talks to api.php.
+require_once __DIR__ . '/api.php';
+
+// One of this plugin's settings, as an FPP setting row. A target saved before
+// the presets (a custom value) is moved to the nearest preset so it shows.
+function AudioLevelerPrintSetting($name)
+{
+    global $pluginSettings;
+    if ($name === 'AudioLeveler_target' && isset($pluginSettings[$name]) && $pluginSettings[$name] !== '') {
+        $v = floatval($pluginSettings[$name]);
+        $presets = array(-18, -16, -14, -12, -10);
+        $near = $presets[0];
+        foreach ($presets as $p) {
+            if (abs($p - $v) < abs($near - $v)) {
+                $near = $p;
+            }
+        }
+        if ((string) $near !== (string) $pluginSettings[$name]) {
+            WriteSettingToFile($name, (string) $near, AUDIOLEVELER_PLUGIN);
+            $pluginSettings[$name] = (string) $near;
+        }
+    }
+    PrintPluginSetting(AUDIOLEVELER_PLUGIN, $name, 'audioLevelerSettingSaved');
+}
+?>
 <div id="audioLeveler" class="mt-2">
 
     <div id="alNoFfmpeg" class="alert alert-danger d-none" role="alert">
@@ -11,32 +38,24 @@
             <div class="card h-100">
                 <div class="card-header fw-semibold">Leveling settings</div>
                 <div class="card-body">
-                    <label for="alTargetPreset" class="form-label fw-semibold mb-1">Target level</label>
-                    <div class="input-group mb-1">
-                        <select id="alTargetPreset" class="form-select">
-                            <option value="-18">-18 LUFS &middot; quietest, most headroom</option>
-                            <option value="-16">-16 LUFS &middot; quieter, more headroom</option>
-                            <option value="-14">-14 LUFS &middot; recommended</option>
-                            <option value="-12">-12 LUFS &middot; louder</option>
-                            <option value="-10">-10 LUFS &middot; loud, for FM transmitters</option>
-                            <option value="custom">Custom&hellip;</option>
-                        </select>
-                        <input id="alTargetCustom" type="number" class="form-control d-none" min="-30" max="-6" step="0.5" aria-label="Custom target in LUFS">
+                    <!-- Settings are FPP's own setting rows (settings.json), saved as
+                         soon as they change; audioLevelerSettingSaved() refreshes the page. -->
+                    <div class="settingsTable container-fluid px-0">
+                        <?php AudioLevelerPrintSetting('AudioLeveler_target'); ?>
                     </div>
-                    <div class="form-text mb-2">Every song is brought to this loudness. Use FPP's volume to set how loud the show plays overall.</div>
 
                     <!-- Target advisor: what each target would mean for these songs -->
                     <div id="alAdvisor" class="mb-3 d-none">
                         <div class="small fw-semibold mb-1">What each target means for your songs</div>
+                        <div class="form-text mt-0 mb-1">Tap a level to use it.</div>
                         <div class="table-responsive">
                             <table class="table table-sm small align-middle mb-1">
                                 <thead>
                                     <tr>
-                                        <th scope="col">Target</th>
-                                        <th scope="col" class="text-end" title="A plain volume change does it (lossless for MP3s, or FPP playback gain)">Volume only</th>
-                                        <th scope="col" class="text-end" title="Needs 3 dB or less of peak trimming">Gentle limiter</th>
-                                        <th scope="col" class="text-end" title="Would need more trimming; recommended to land a little quieter instead">Lands quieter</th>
-                                        <th scope="col"></th>
+                                        <th scope="col">LUFS</th>
+                                        <th scope="col" class="text-end" title="A plain volume change does it (lossless for MP3s, or FPP's Normalize)">Volume</th>
+                                        <th scope="col" class="text-end" title="Needs the gentle limiter: 3 dB or less of peak trimming">Limiter</th>
+                                        <th scope="col" class="text-end" title="Would need more trimming, so it lands a little quieter instead">Quieter</th>
                                     </tr>
                                 </thead>
                                 <tbody id="alAdvisorRows"></tbody>
@@ -45,31 +64,13 @@
                         <div id="alAdvisorNote" class="form-text"></div>
                     </div>
 
-                    <label for="alCeiling" class="form-label fw-semibold mb-1">Peak ceiling</label>
-                    <select id="alCeiling" class="form-select mb-1">
-                        <option value="-0.5">-0.5 dBTP</option>
-                        <option value="-1">-1 dBTP &middot; recommended</option>
-                        <option value="-2">-2 dBTP &middot; extra safe for FM</option>
-                    </select>
-                    <div class="form-text mb-3">The loudest peak allowed, so nothing clips or distorts.</div>
-
-                    <label for="alMatch" class="form-label fw-semibold mb-1">Match songs by</label>
-                    <select id="alMatch" class="form-select mb-1">
-                        <option value="speakers">How they sound on outdoor speakers &middot; recommended</option>
-                        <option value="lufs">Plain loudness (LUFS)</option>
-                    </select>
-                    <div class="form-text mb-3">Outdoor speakers and FM transmitters barely play deep bass, so a bass-heavy song can measure on target
-                        yet sound quieter outside. Speaker matching (the same method as FPP's Normalize) nudges each song's target by up to 4 dB
-                        to make up for it. Songs measured before you turn this on need measuring again.</div>
-
-                    <label for="alBgOffset" class="form-label fw-semibold mb-1">Background level</label>
-                    <select id="alBgOffset" class="form-select mb-1">
-                        <option value="6">6 dB under the show</option>
-                        <option value="10">10 dB under the show &middot; recommended</option>
-                        <option value="14">14 dB under the show</option>
-                        <option value="18">18 dB under the show</option>
-                    </select>
-                    <div class="form-text mb-3">For songs set to <i>Background</i> in the Fix column, like ambiance and off-hours music: heard, but under the show.</div>
+                    <div class="settingsTable container-fluid px-0 mb-3">
+                        <?php
+                        AudioLevelerPrintSetting('AudioLeveler_ceiling');
+                        AudioLevelerPrintSetting('AudioLeveler_match');
+                        AudioLevelerPrintSetting('AudioLeveler_bgOffset');
+                        ?>
+                    </div>
 
                     <div class="fw-semibold mb-1">Fixes</div>
                     <div class="form-text mt-0 mb-1">Each song uses the fix shown in its <i>Fix</i> column. Every song starts on <b>Recommended</b>;
@@ -84,41 +85,18 @@
                         <li><b>Background</b>: deliberately under the show, by the Background level above. <b>Skip</b>: left alone.</li>
                     </ul>
 
-                    <div id="alPlaybackGainRow" class="d-none">
-                        <div class="form-check form-switch mb-1">
-                            <input class="form-check-input" type="checkbox" role="switch" id="alPlaybackGain">
-                            <label class="form-check-label" for="alPlaybackGain">Use FPP's playback gain for volume changes</label>
-                        </div>
-                        <div class="form-text mb-3">This FPP can turn a song up or down as it plays (the same thing File Manager's Normalize uses).
-                            When a song only needs a volume change, that's used instead of changing the file: exact, lossless for every format,
-                            and the file stays exactly as uploaded. Songs that need the limiter or compression still have their file rewritten.</div>
+                    <div class="settingsTable container-fluid px-0">
+                        <?php
+                        // FPP's Normalize is only on newer FPP versions.
+                        if (AudioLevelerPlaybackGainSupported()) {
+                            AudioLevelerPrintSetting('AudioLeveler_playbackGain');
+                        }
+                        AudioLevelerPrintSetting('AudioLeveler_lossless');
+                        AudioLevelerPrintSetting('AudioLeveler_autoLevel');
+                        AudioLevelerPrintSetting('AudioLeveler_backup');
+                        AudioLevelerPrintSetting('AudioLeveler_waitIdle');
+                        ?>
                     </div>
-
-                    <div class="form-check form-switch mb-1">
-                        <input class="form-check-input" type="checkbox" role="switch" id="alLossless">
-                        <label class="form-check-label" for="alLossless">Lossless volume change for MP3s when possible</label>
-                    </div>
-                    <div class="form-text mb-3">Like MP3Gain: changes an MP3's volume in 1.5 dB steps without re-encoding, so there's no quality loss at all.
-                        Used whenever a song only needs turning up or down. Songs that need the limiter or compression, and other formats,
-                        are re-encoded at top quality (MP3 at 320 kbps).</div>
-
-                    <div class="form-check form-switch mb-1">
-                        <input class="form-check-input" type="checkbox" role="switch" id="alAutoLevel">
-                        <label class="form-check-label" for="alAutoLevel">Level new and replaced songs automatically</label>
-                    </div>
-                    <div class="form-text mb-3">Handles songs added or changed after you switch this on (an upload from xLights, say). It checks when FPP starts,
-                        whenever a playlist stops, and when you open this page, then measures them and applies each one's fix
-                        once no show is playing. Songs set to Skip are left alone, and a file that's still uploading waits for the next check.</div>
-
-                    <div class="form-check form-switch mb-2">
-                        <input class="form-check-input" type="checkbox" role="switch" id="alBackup">
-                        <label class="form-check-label" for="alBackup">Keep the original of each song so it can be restored</label>
-                    </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" role="switch" id="alWaitIdle">
-                        <label class="form-check-label" for="alWaitIdle">Wait until no show is playing before working</label>
-                    </div>
-                    <div class="form-text">When off, work runs at low priority during the show, but a song is never replaced while it is playing.</div>
                 </div>
             </div>
         </div>

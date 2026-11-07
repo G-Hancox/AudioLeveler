@@ -10,8 +10,8 @@
  *   POST   level      level songs                 body: {"files": [...]|"all", "target", "ceiling", "mode", "backup", "waitIdle"}
  *   POST   restore    put originals back          body: {"files": [...]|"all"}
  *   POST   cancel     stop the running job after the current song
- *   GET    options    saved defaults for the page
- *   POST   options    save defaults
+ *   GET    options    the saved settings (FPP saves them: settings.json + PrintPluginSetting)
+ *   POST   settingschanged   the page saved a setting: refresh what background work uses
  *   DELETE backups    delete every backed-up original
  *
  * The heavy lifting is done by bin/leveler.py, started in the background at
@@ -32,21 +32,24 @@ function getEndpointsAudioLeveler()
         array('method' => 'POST', 'endpoint' => 'restore', 'callback' => 'AudioLevelerRestore'),
         array('method' => 'POST', 'endpoint' => 'cancel', 'callback' => 'AudioLevelerCancel'),
         array('method' => 'GET', 'endpoint' => 'options', 'callback' => 'AudioLevelerGetOptions'),
-        array('method' => 'POST', 'endpoint' => 'options', 'callback' => 'AudioLevelerSetOptions'),
+        array('method' => 'POST', 'endpoint' => 'settingschanged', 'callback' => 'AudioLevelerSettingsChanged'),
         array('method' => 'DELETE', 'endpoint' => 'backups', 'callback' => 'AudioLevelerDeleteBackups'),
         array('method' => 'POST', 'endpoint' => 'choice', 'callback' => 'AudioLevelerSetChoice'),
         array('method' => 'POST', 'endpoint' => 'autocheck', 'callback' => 'AudioLevelerAutoCheck'),
+        array('method' => 'GET', 'endpoint' => 'gains', 'callback' => 'AudioLevelerGains'),
+        array('method' => 'POST', 'endpoint' => 'checkvideos', 'callback' => 'AudioLevelerCheckVideos'),
     );
 }
 
 define('AUDIOLEVELER_PLUGIN', 'AudioLeveler');
 
+// The settings, saved by FPP as AudioLeveler_<name> in config/plugin.AudioLeveler.
+// Defaults match settings.json.
 function AudioLevelerDefaults()
 {
     return array(
         'target' => -14.0,   // LUFS
         'ceiling' => -1.0,   // dBTP
-        'mode' => 'auto',    // auto (recommended per song) | volume | limit | compress
         'bgOffset' => 10.0,  // dB under the target for songs set to Background
         'backup' => true,
         'waitIdle' => true,
@@ -54,7 +57,6 @@ function AudioLevelerDefaults()
         'autoLevel' => false, // level new and replaced songs automatically
         'playbackGain' => true, // use FPP's playback gain for volume-only fixes, where FPP has it
         'match' => 'speakers', // speakers (ignore deep bass, as FPP's Normalize) | lufs
-        'videos' => true,    // level the sound of the videos in the videos folder too
     );
 }
 
@@ -74,16 +76,10 @@ function AudioLevelerMusicDir()
     return rtrim($settings['musicDirectory'], '/');
 }
 
-// The videos folder, or '' when videos are switched off (the worker then leaves them out).
-function AudioLevelerVideoDir($opt = null)
+// The videos folder (videos have their own tab).
+function AudioLevelerVideoDir()
 {
     global $settings;
-    if ($opt === null) {
-        $opt = AudioLevelerOptions();
-    }
-    if (empty($opt['videos'])) {
-        return '';
-    }
     $dir = isset($settings['videoDirectory']) ? $settings['videoDirectory'] : $settings['mediaDirectory'] . '/videos';
     return rtrim($dir, '/');
 }
@@ -94,47 +90,58 @@ function AudioLevelerLogFile()
     return rtrim($settings['logDirectory'], '/') . '/plugin-' . AUDIOLEVELER_PLUGIN . '.log';
 }
 
-function AudioLevelerLogWritable()
-{
-    $f = AudioLevelerLogFile();
-    return file_exists($f) ? is_writable($f) : is_writable(dirname($f));
-}
-
-// FPP versions with File Manager > Normalize apply a per-song gain at playback
-// from <config>/media_gain.json. Where that exists, volume-only fixes go there
-// (exact, lossless, any format) instead of into the file.
-function AudioLevelerNormalizeFile()
+// FPP versions with File Manager > Normalize turn each song up or down as it
+// plays. Where that exists, volume-only fixes go there (exact, lossless, any
+// format) instead of into the file. Those gains are FPP's own data: they're
+// set and removed only through FPP's Normalize (run_normalize.php, the same
+// request the File Manager makes) and read with FPP's own helper, never by
+// touching the file they're kept in.
+function AudioLevelerFppDir()
 {
     global $settings;
-    $fpp = isset($settings['fppDir']) ? $settings['fppDir'] : '/opt/fpp';
-    return $fpp . '/www/common/audioNormalize.inc.php';
+    return rtrim(isset($settings['fppDir']) ? $settings['fppDir'] : '/opt/fpp', '/');
 }
 
 function AudioLevelerPlaybackGainSupported()
 {
-    return file_exists(AudioLevelerNormalizeFile());
+    return file_exists(AudioLevelerFppDir() . '/www/run_normalize.php')
+        && file_exists(AudioLevelerFppDir() . '/www/common/audioNormalize.inc.php');
 }
 
-function AudioLevelerGainFile()
+// {name: {gainDb, size}} for every song ("name") and video ("videos/name")
+// FPP applies a gain to, from FPP's helper.
+function AudioLevelerLoadGains()
 {
-    global $settings;
-    $cfg = isset($settings['configDirectory']) ? $settings['configDirectory'] : $settings['mediaDirectory'] . '/config';
-    return rtrim($cfg, '/') . '/media_gain.json';
+    if (!AudioLevelerPlaybackGainSupported()) {
+        return array();
+    }
+    if (!function_exists('AN_LoadGains')) {
+        require_once AudioLevelerFppDir() . '/www/common/audioNormalize.inc.php';
+    }
+    $out = array();
+    foreach (AN_LoadGains() as $name => $e) {
+        if (is_array($e) && isset($e['gainDb'], $e['size'])) {
+            $out[$name] = array('gainDb' => floatval($e['gainDb']), 'size' => intval($e['size']));
+        }
+    }
+    return $out;
 }
 
 // What the worker needs to use playback gain (or not).
 function AudioLevelerPlaybackGainRequest($opt)
 {
-    global $settings;
     $on = AudioLevelerPlaybackGainSupported() && !empty($opt['playbackGain']);
-    // Playback gain for a video's sound came with FPP's Normalize handling videos.
-    $videos = $on && strpos((string) @file_get_contents(AudioLevelerNormalizeFile()), "'videos/'") !== false;
     return array(
         'enabled' => $on,
-        'videos' => $videos,
-        'file' => AudioLevelerPlaybackGainSupported() ? AudioLevelerGainFile() : '',
-        'lock' => rtrim($settings['mediaDirectory'], '/') . '/tmp/media_gain.lock',
+        'supported' => AudioLevelerPlaybackGainSupported(),
     );
+}
+
+// GET /api/plugin/AudioLeveler/gains   (for the worker)
+function AudioLevelerGains()
+{
+    AudioLevelerNoCache();
+    return json(array('status' => 'OK', 'gains' => (object) AudioLevelerLoadGains()));
 }
 
 function AudioLevelerLog($msg)
@@ -259,6 +266,7 @@ function AudioLevelerStart($command, $request)
 
     $data = AudioLevelerDataDir();
     $reqFile = $data . '/request.json';
+    $previousJob = @file_get_contents($data . '/job.json');
     file_put_contents($reqFile, json_encode($request));
     @unlink($data . '/cancel');
     file_put_contents($data . '/job.json', json_encode(array(
@@ -275,39 +283,23 @@ function AudioLevelerStart($command, $request)
         '--log', AudioLevelerLogFile(), '--request', $reqFile);
     file_put_contents($data . '/launch.json', json_encode(array('argv' => $argv)));
 
-    if (AudioLevelerStartThroughFppd()) {
+    if (AudioLevelerRunCommand('Queued job')) {
         AudioLevelerLog("Started $command job");
         return json(array('status' => 'OK'));
     }
-
-    // fppd isn't running, or hasn't loaded the plugin's command yet (FPP 9
-    // and older until fppd restarts): start the worker from here instead.
-    $script = __DIR__ . '/bin/leveler.py';
-    $prio = 'nice -n 19';
-    if (trim(shell_exec('command -v ionice 2>/dev/null')) !== '') {
-        $prio .= ' ionice -c 3';
+    // All background work runs under fppd, never under the web server.
+    // Nothing started: the page goes back to showing the last job.
+    @unlink($data . '/launch.json');
+    if ($previousJob !== false) {
+        file_put_contents($data . '/job.json', $previousJob);
+    } else {
+        @unlink($data . '/job.json');
     }
-    $cmd = sprintf(
-        'nohup %s python3 %s %s --music %s --videos %s --data %s --log %s --request %s > /dev/null 2>> %s &',
-        $prio,
-        escapeshellarg($script),
-        escapeshellarg($command),
-        escapeshellarg(AudioLevelerMusicDir()),
-        escapeshellarg(AudioLevelerVideoDir()),
-        escapeshellarg($data),
-        escapeshellarg(AudioLevelerLogFile()),
-        escapeshellarg($reqFile),
-        // Anything the worker prints before its own logging is up (a Python
-        // error, a missing tool) goes to the plugin log when we can write it.
-        AudioLevelerLogWritable() ? escapeshellarg(AudioLevelerLogFile()) : '/dev/null'
-    );
-    exec($cmd);
-    AudioLevelerLog("Started $command job (fppd could not start it)");
-    return json(array('status' => 'OK'));
+    return AudioLevelerError(503, 'FPPD isn\'t running, so the job can\'t start. Start FPPD (top of any FPP page), then try again.');
 }
 
-/* Ask fppd to run the Start Job command. False if fppd can't be asked or doesn't have the command. */
-function AudioLevelerStartThroughFppd()
+/* Ask fppd to run the Start Job command with this Task. False if fppd can't be asked or doesn't have the command. */
+function AudioLevelerRunCommand($task)
 {
     // Looked up first: running a command fppd doesn't have puts a warning on every FPP page.
     $ctx = stream_context_create(array('http' => array('timeout' => 3, 'ignore_errors' => true)));
@@ -325,7 +317,7 @@ function AudioLevelerStartThroughFppd()
     $ctx = stream_context_create(array('http' => array(
         'method' => 'POST',
         'header' => "Content-Type: application/json\r\n",
-        'content' => '[]',
+        'content' => json_encode(array($task)),
         'timeout' => 10,
         'ignore_errors' => true,
     )));
@@ -349,11 +341,13 @@ function AudioLevelerVideoHasAudio($name, $size, $mtime, $analysis, $cache)
     return null;
 }
 
-// Start the background check unless it's already running.
-function AudioLevelerStartVideoProbe($videoDir)
+// POST /api/plugin/AudioLeveler/checkvideos
+// The page asks for this while the list says videos are still unchecked.
+// The check (bin/probe_videos.py) runs under fppd; one at a time.
+function AudioLevelerCheckVideos()
 {
-    $data = AudioLevelerDataDir();
-    $lock = @fopen($data . '/probe.lock', 'c');
+    AudioLevelerWriteAutoSettings(); // the command reads the videos folder from auto.json
+    $lock = @fopen(AudioLevelerDataDir() . '/probe.lock', 'c');
     if ($lock) {
         $free = flock($lock, LOCK_EX | LOCK_NB);
         if ($free) {
@@ -361,15 +355,13 @@ function AudioLevelerStartVideoProbe($videoDir)
         }
         fclose($lock);
         if (!$free) {
-            return;
+            return json(array('status' => 'OK', 'running' => true));
         }
     }
-    $prio = 'nice -n 19';
-    if (trim(shell_exec('command -v ionice 2>/dev/null')) !== '') {
-        $prio .= ' ionice -c 3';
+    if (!AudioLevelerRunCommand('Check videos for sound')) {
+        return AudioLevelerError(503, 'FPPD isn\'t running, so videos can\'t be checked for sound yet.');
     }
-    exec(sprintf('nohup %s python3 %s --videos %s --data %s > /dev/null 2>&1 &', $prio,
-        escapeshellarg(__DIR__ . '/bin/probe_videos.py'), escapeshellarg($videoDir), escapeshellarg($data)));
+    return json(array('status' => 'OK', 'running' => true));
 }
 
 // GET /api/plugin/AudioLeveler/files
@@ -381,7 +373,7 @@ function AudioLevelerFiles()
     $analysis = AudioLevelerReadJson($data . '/analysis.json', array());
     $leveled = AudioLevelerReadJson($data . '/leveled.json', array());
     $choices = AudioLevelerReadJson($data . '/choices.json', array());
-    $gains = AudioLevelerPlaybackGainSupported() ? AudioLevelerReadJson(AudioLevelerGainFile(), array()) : array();
+    $gains = AudioLevelerLoadGains();
     $backupDir = $data . '/backups';
 
     $files = array();
@@ -458,14 +450,13 @@ function AudioLevelerFiles()
         if (isset($gains[$name]) && is_array($gains[$name]) && isset($gains[$name]['gainDb'], $gains[$name]['size'])
             && intval($gains[$name]['size']) === $size) {
             $row['pbGain'] = floatval($gains[$name]['gainDb']);
-            $row['pbSource'] = (isset($gains[$name]['source']) && $gains[$name]['source'] === 'AudioLeveler') ? 'plugin' : 'fpp';
+            // Ours when this plugin leveled this exact file with a playback gain.
+            $row['pbSource'] = ($l && isset($l['method']) && $l['method'] === 'playback'
+                && $l['size'] == $size && $l['mtime'] == $mtime) ? 'plugin' : 'fpp';
         }
         $files[] = $row;
     }
 
-    if ($checking) {
-        AudioLevelerStartVideoProbe($videoDir);
-    }
 
     $backupBytes = 0;
     $backupCount = 0;
@@ -483,7 +474,7 @@ function AudioLevelerFiles()
         'freeBytes' => @disk_free_space($music),
         'haveFfmpeg' => trim(shell_exec('command -v ffmpeg 2>/dev/null')) !== '',
         'playbackGainSupported' => AudioLevelerPlaybackGainSupported(),
-        'playbackGainVideos' => AudioLevelerPlaybackGainRequest(AudioLevelerOptions())['videos'],
+        'playbackGainVideos' => AudioLevelerPlaybackGainSupported(),
     ));
 }
 
@@ -530,9 +521,8 @@ function AudioLevelerAnalyze()
 function AudioLevelerLevel()
 {
     $body = AudioLevelerBody();
-    $opt = array_merge(AudioLevelerOptions(), $body);
-    // Songs without a fix of their own always use the recommendation. (An
-    // older saved 'mode' setting from before per-song fixes is ignored.)
+    $opt = AudioLevelerOptions();
+    // Songs without a fix of their own always use the recommendation.
     $mode = 'auto';
     return AudioLevelerStart('level', array(
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
@@ -599,40 +589,18 @@ function AudioLevelerGetOptions()
     return json(array('status' => 'OK', 'options' => AudioLevelerOptions()));
 }
 
-// POST /api/plugin/AudioLeveler/options
-function AudioLevelerSetOptions()
+// POST /api/plugin/AudioLeveler/settingschanged
+// FPP saved one of the settings (the page's setting rows call this after each
+// save). Automatic leveling only handles files added or changed after it was
+// switched on, so switching it on never sweeps a whole library: note when.
+function AudioLevelerSettingsChanged()
 {
-    $body = AudioLevelerBody();
-    $defaults = AudioLevelerDefaults();
-    foreach ($defaults as $k => $v) {
-        if (!array_key_exists($k, $body)) {
-            continue;
-        }
-        $val = $body[$k];
-        if ($k === 'mode' && !in_array($val, array('auto', 'volume', 'limit', 'compress'))) {
-            continue;
-        }
-        if ($k === 'match' && !in_array($val, array('speakers', 'lufs'), true)) {
-            continue;
-        }
-        if ($k === 'target') {
-            $val = max(-30, min(-6, floatval($val)));
-        }
-        if ($k === 'ceiling') {
-            $val = max(-6, min(0, floatval($val)));
-        }
-        if ($k === 'bgOffset') {
-            $val = max(3, min(30, floatval($val)));
-        }
-        if (is_bool($v)) {
-            $val = $val ? '1' : '0';
-        }
-        // Automatic leveling only handles songs added or changed after it was
-        // switched on, so switching it on never sweeps a whole library.
-        if ($k === 'autoLevel' && $val === '1' && !AudioLevelerOptions()['autoLevel']) {
-            WriteSettingToFile('AudioLeveler_autoSince', (string) time(), AUDIOLEVELER_PLUGIN);
-        }
-        WriteSettingToFile('AudioLeveler_' . $k, (string) $val, AUDIOLEVELER_PLUGIN);
+    $opt = AudioLevelerOptions();
+    $since = ReadSettingFromFile('AudioLeveler_autoSince', AUDIOLEVELER_PLUGIN);
+    if ($opt['autoLevel'] && !$since) {
+        WriteSettingToFile('AudioLeveler_autoSince', (string) time(), AUDIOLEVELER_PLUGIN);
+    } elseif (!$opt['autoLevel'] && $since) {
+        WriteSettingToFile('AudioLeveler_autoSince', '', AUDIOLEVELER_PLUGIN);
     }
     AudioLevelerWriteAutoSettings();
     return json(array('status' => 'OK', 'options' => AudioLevelerOptions()));
@@ -654,7 +622,7 @@ function AudioLevelerWriteAutoSettings()
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
         'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
         'music' => AudioLevelerMusicDir(),
-        'videos' => AudioLevelerVideoDir($opt),
+        'videos' => AudioLevelerVideoDir(),
         'log' => AudioLevelerLogFile(),
     );
     $path = AudioLevelerDataDir() . '/auto.json';
@@ -671,14 +639,13 @@ function AudioLevelerWriteAutoSettings()
 // the background, waiting for any show to end).
 function AudioLevelerAutoCheck()
 {
-    global $settings;
     AudioLevelerWriteAutoSettings();
     if (!AudioLevelerOptions()['autoLevel'] || AudioLevelerBusy()) {
         return json(array('status' => 'OK', 'started' => false));
     }
-    $script = __DIR__ . '/bin/auto_check.sh';
-    exec('MEDIADIR=' . escapeshellarg(rtrim($settings['mediaDirectory'], '/')) . ' ' .
-        escapeshellarg($script) . ' > /dev/null 2>&1');
+    if (!AudioLevelerRunCommand('Level new uploads')) {
+        return json(array('status' => 'OK', 'started' => false));
+    }
     return json(array('status' => 'OK', 'started' => true));
 }
 

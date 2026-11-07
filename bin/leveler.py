@@ -21,6 +21,7 @@ import argparse
 import fcntl
 import json
 import logging
+import logging.handlers
 import math
 import os
 import re
@@ -564,85 +565,101 @@ class Worker:
             return bpath, True
         return path, False
 
-    # -- FPP's playback gain (media_gain.json) ----------------------------
+    # -- FPP's playback gain (File Manager > Normalize) -------------------
     #
-    # FPP versions with File Manager > Normalize apply a per-song gain at
-    # playback from <config>/media_gain.json: {"<name>": {"gainDb": -3.2,
-    # "size": <bytes>, ...}}, ignoring an entry whose size no longer matches
-    # the file. Where that exists, a song that only needs a volume change is
-    # leveled there instead of in the file: exact, lossless, any format. The
-    # file is updated under FPP's own lock, the way FPP's Normalize does it.
+    # FPP versions with File Manager > Normalize turn each song up or down as
+    # it plays, by a gain FPP keeps per song. Where that exists, a song that
+    # only needs a volume change is leveled there instead of in the file:
+    # exact, lossless, any format, and the file stays as uploaded.
+    #
+    # Those gains are FPP's data, so this plugin never touches the file they
+    # live in. They're set and removed by FPP's own Normalize (the same request
+    # its File Manager makes, run_normalize.php), and read through this
+    # plugin's API, which asks FPP's own helper (api.php, GET gains).
+
+    NORMALIZE_BUSY_WAIT = 300   # seconds to wait for a Normalize someone else started
 
     def playback_gain_on(self):
-        pg = self.req.get("playbackGain") or {}
-        return bool(pg.get("enabled") and pg.get("file"))
+        return bool((self.req.get("playbackGain") or {}).get("enabled"))
 
-    def update_gains(self, change):
-        """change(dict) -> True if it changed anything; written atomically under FPP's lock."""
-        pg = self.req.get("playbackGain") or {}
-        path, lock_path = pg.get("file"), pg.get("lock")
-        if not path or not os.path.isdir(os.path.dirname(path)):
-            return
-        lock = None
-        if lock_path:
-            try:
-                os.makedirs(os.path.dirname(lock_path), exist_ok=True)
-                lock = open(lock_path, "a")
-                fcntl.flock(lock, fcntl.LOCK_EX)
-            except OSError:
-                lock = None
-        try:
-            gains = read_json(path, {})
-            if not isinstance(gains, dict):
-                gains = {}
-            if change(gains):
-                tmp = path + ".tmp"
-                with open(tmp, "w", encoding="utf-8") as f:
-                    if gains:
-                        json.dump(gains, f, indent=4, sort_keys=True)
-                    else:
-                        f.write("{}")
-                    f.write("\n")
-                os.replace(tmp, path)
-        finally:
-            if lock:
-                fcntl.flock(lock, fcntl.LOCK_UN)
-                lock.close()
+    def gains(self, refresh=False):
+        """{name: {"gainDb", "size"}} for every song and video FPP applies a gain to."""
+        if refresh or getattr(self, "_gains", None) is None:
+            self._gains = {}
+            if (self.req.get("playbackGain") or {}).get("supported"):
+                try:
+                    # This plugin's own API on this FPP, which asks FPP's helper.
+                    with urllib.request.urlopen("http://127.0.0.1/api/plugin/AudioLeveler/gains", timeout=20) as r:
+                        j = json.loads(r.read().decode("utf-8", "replace"))
+                    if isinstance(j.get("gains"), dict):
+                        self._gains = j["gains"]
+                except Exception as ex:
+                    logging.warning("Could not read FPP's playback gains: %s", ex)
+        return self._gains
 
     def current_gain(self, name, path):
-        """The playback gain fppd would apply to this file now (any source), or 0."""
-        pg = self.req.get("playbackGain") or {}
-        if not pg.get("file"):
-            return 0.0
-        gains = read_json(pg["file"], {})
-        e = gains.get(name) if isinstance(gains, dict) else None
+        """The playback gain fppd would apply to this file now (ours or FPP Normalize's), or 0."""
+        e = self.gains().get(name)
         try:
-            if e and int(e.get("size", -1)) == os.path.getsize(path):
+            if isinstance(e, dict) and int(e.get("size", -1)) == os.path.getsize(path):
                 return clamp(float(e.get("gainDb", 0)), -30.0, 20.0)
         except (OSError, TypeError, ValueError):
             pass
         return 0.0
 
-    def set_gain(self, name, gain, m, target):
-        size = os.path.getsize(self.path_of(name))
-        entry = {"gainDb": round(gain, 1), "size": size,
-                 "lufs": None if m["I"] is None else round(m["I"], 1),
-                 "truePeak": None if m["TP"] is None else round(m["TP"], 1),
-                 "target": target, "match": "lufs", "measured": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                 "source": "AudioLeveler"}
+    def normalize(self, name, action, target=None, ceiling=None):
+        """
+        Ask FPP's Normalize to set (action "normalize") or remove a gain for one
+        song or video. Returns its output text; raises RuntimeError on failure.
+        """
+        body = {"files": [os.path.basename(name)], "dir": "Videos" if is_video(name) else "Music",
+                "action": action}
+        if action == "normalize":
+            body.update(target=round(target, 1), peak=round(ceiling, 1),
+                        match="speakers" if self.speakers() else "lufs")
+        waited = 0
+        while True:
+            # FPP's own Normalize on this FPP (the request File Manager makes).
+            req = urllib.request.Request("http://127.0.0.1/run_normalize.php", data=json.dumps(body).encode("utf-8"),
+                                         headers={"Content-Type": "application/json"}, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=1800) as r:
+                    text = r.read().decode("utf-8", "replace")
+            except Exception as ex:
+                raise RuntimeError("FPP's Normalize could not be reached (%s)" % ex)
+            if "Another normalize is already running" in text and waited < self.NORMALIZE_BUSY_WAIT:
+                # Someone is normalizing from the File Manager: wait our turn.
+                if self.cancelled():
+                    raise Cancelled()
+                time.sleep(10)
+                waited += 10
+                continue
+            break
+        self._gains = None  # changed: read again next time
+        fail = re.search(r"FAILED: (.*)", text)
+        if fail:
+            raise RuntimeError("FPP's Normalize: " + fail.group(1).strip())
+        if "Another normalize is already running" in text:
+            raise RuntimeError("FPP's Normalize is busy with another run")
+        return text
 
-        def change(g):
-            g[name] = entry
-            return True
-        self.update_gains(change)
+    def set_gain(self, name, target, ceiling):
+        """Have FPP's Normalize measure the song and set its gain for this target. Returns the gain."""
+        text = self.normalize(name, "normalize", target, ceiling)
+        if "no audio track" in text:
+            raise NoAudio("no sound track")
+        m = re.search(r"plays at ([+-]?\d+(?:\.\d+)?) dB", text)
+        if not m:
+            raise RuntimeError("FPP's Normalize gave no gain for it")
+        return float(m.group(1))
 
     def clear_gain(self, name):
-        def change(g):
-            if name in g:
-                del g[name]
-                return True
-            return False
-        self.update_gains(change)
+        """Remove a playback gain FPP has for this song, if there is one."""
+        if name in self.gains():
+            try:
+                self.normalize(name, "remove")
+            except RuntimeError as ex:
+                logging.warning("%s: could not remove its playback gain: %s", name, ex)
 
     def speakers(self):
         return self.req.get("match") == "speakers"
@@ -784,33 +801,49 @@ class Worker:
             shutil.copyfile(src, tmp)
             out, method, gain = dict(m), "original", 0.0
 
-        # 2a. Only a volume change, on an FPP that applies playback gain: set it
-        #     there. Exact, lossless for every format, and the file is left as
-        #     it is (a file we rewrote earlier gets its original back first).
-        if method is None and mode == "volume" and self.playback_gain_on() and (
-                not video or (self.req.get("playbackGain") or {}).get("videos")):
+        # 2a. Only a volume change, on an FPP that applies playback gain: have
+        #     FPP's own Normalize set it. Exact, lossless for every format, and
+        #     the file is left as it is (a file we rewrote earlier gets its
+        #     original back first). FPP's Normalize works out the same gain
+        #     (same measurement, speaker matching and peak rule) from the
+        #     song's target before speaker matching.
+        if (method is None and mode == "volume" and self.playback_gain_on()
+                and -30.0 <= target - delta <= -5.0):
             if not self.wait_for_idle(name):
                 return False, "cancelled"
             if from_backup:
                 shutil.copy2(src, path + ".restoring")
                 os.replace(path + ".restoring", path)
-            self.set_gain(name, gain, m, target)
-            sig = file_sig(path)
-            self.leveled[name] = dict(sig, target=target, ceiling=ceiling, mode=mode,
-                                      gain=round(gain, 1), limited=False, at=now(),
-                                      method="playback", backup=os.path.exists(self.backup_path(name)))
-            write_json(self.leveled_path, self.leveled)
-            entry = dict(sig)
-            entry.update(probe(path))
-            entry.update(m)
-            entry["measured"] = now()
-            self.analysis[name] = entry
-            write_json(self.analysis_path, self.analysis)
-            after = m["I"] + gain
-            held = m["TP"] is not None and m["TP"] + (target - m["I"]) > ceiling + 0.05
-            return True, "%.1f -> %.1f LUFS, %+.1f dB, playback gain (file untouched)%s%s" % (
-                m["I"], after, gain, spk_note(delta),
-                " (held back by peaks, ends %.1f dB under the target)" % (target - after) if held and target - after > 0.3 else "")
+            try:
+                gain = self.set_gain(name, target - delta, ceiling)
+                pb_error = None
+            except NoAudio:
+                return True, "no sound track, nothing to level"
+            except RuntimeError as ex:
+                pb_error = str(ex)
+            if pb_error is None:
+                sig = file_sig(path)
+                self.leveled[name] = dict(sig, target=target, ceiling=ceiling, mode=mode,
+                                          gain=round(gain, 1), limited=False, at=now(),
+                                          method="playback", backup=os.path.exists(self.backup_path(name)))
+                write_json(self.leveled_path, self.leveled)
+                entry = dict(sig)
+                entry.update(probe(path))
+                entry.update(m)
+                entry["measured"] = now()
+                self.analysis[name] = entry
+                write_json(self.analysis_path, self.analysis)
+                after = m["I"] + gain
+                held = m["TP"] is not None and m["TP"] + (target - m["I"]) > ceiling + 0.05
+                return True, "%.1f -> %.1f LUFS, %+.1f dB, playback gain set by FPP's Normalize (file untouched)%s%s" % (
+                    m["I"], after, gain, spk_note(delta),
+                    " (held back by peaks, ends %.1f dB under the target)" % (target - after)
+                    if held and target - after > 0.3 else "")
+            # FPP's Normalize couldn't do it: level the file instead.
+            logging.warning("%s: playback gain not set (%s); leveling the file instead", name, pb_error)
+            note = "; file leveled because " + pb_error
+            if from_backup:
+                src, from_backup = path, False  # the original is back in place now
 
         # 2b. MP3 that only needs a volume change: change it losslessly, the way
         #     MP3Gain does, in 1.5 dB steps. Nothing is re-encoded.
@@ -1100,7 +1133,7 @@ class Worker:
                 # Leveled by playback gain only: the file was never changed,
                 # so restoring is just removing that gain.
                 if name in self.our_gains():
-                    self.clear_gain(name)
+                    self.normalize(name, "remove")
                     self.leveled.pop(name, None)
                     write_json(self.leveled_path, self.leveled)
                     self.result(name, True, "playback gain removed; plays as recorded")
@@ -1124,12 +1157,9 @@ class Worker:
         self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
 
     def our_gains(self):
-        """Songs with a playback gain this plugin set."""
-        pg = self.req.get("playbackGain") or {}
-        gains = read_json(pg["file"], {}) if pg.get("file") else {}
-        if not isinstance(gains, dict):
-            return set()
-        return set(k for k, v in gains.items() if isinstance(v, dict) and v.get("source") == "AudioLeveler")
+        """Songs and videos this plugin leveled with a playback gain that FPP still has."""
+        ours = set(k for k, v in self.leveled.items() if isinstance(v, dict) and v.get("method") == "playback")
+        return ours & set(self.gains())
 
     def files_requested_or_backups(self):
         have = set(f for f in os.listdir(self.backups) if safe_name(f))
@@ -1202,7 +1232,10 @@ def main():
 
     log_problem = None
     try:
-        logging.basicConfig(filename=args.log, level=logging.INFO,
+        # WatchedFileHandler reopens the log after FPP rotates it (a job can
+        # run for hours), so nothing is written into the rotated copy.
+        handlers = [logging.handlers.WatchedFileHandler(args.log)] if args.log else None
+        logging.basicConfig(handlers=handlers, level=logging.INFO,
                             format="%(asctime)s %(levelname)s %(message)s")
     except OSError as ex:
         # Can't write the log (e.g. it was created by root). Keep working and

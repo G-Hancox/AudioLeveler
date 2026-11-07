@@ -220,68 +220,24 @@
 
     /* ---------------- options ---------------- */
 
-    function currentTarget() {
-        var p = $id('alTargetPreset').value;
-        if (p === 'custom') {
-            var v = parseFloat($id('alTargetCustom').value);
-            return isNaN(v) ? -14 : Math.max(-30, Math.min(-6, v));
-        }
-        return parseFloat(p);
-    }
-
-    function readOptions() {
-        return {
-            target: currentTarget(),
-            ceiling: parseFloat($id('alCeiling').value),
-            mode: 'auto',
-            bgOffset: parseFloat($id('alBgOffset').value) || 10,
-            match: $id('alMatch').value,
-            backup: $id('alBackup').checked,
-            waitIdle: $id('alWaitIdle').checked,
-            lossless: $id('alLossless').checked,
-            autoLevel: $id('alAutoLevel').checked,
-            playbackGain: $id('alPlaybackGain').checked
-        };
-    }
-
+    // The settings are FPP setting rows (settings.json): FPP saves each one as
+    // it changes, then calls audioLevelerSettingSaved(). The page keeps its own
+    // copy (from the API) for the plan, the stats and the advisor.
     function showOptions(o) {
         options = o;
-        var preset = $id('alTargetPreset');
-        var t = String(Number(o.target));
-        var match = Array.prototype.some.call(preset.options, function (op) { return op.value === t; });
-        preset.value = match ? t : 'custom';
-        $id('alTargetCustom').value = o.target;
-        $id('alTargetCustom').classList.toggle('d-none', match);
-        var c = String(Number(o.ceiling));
-        var cs = $id('alCeiling');
-        if (!Array.prototype.some.call(cs.options, function (op) { return op.value === c; })) {
-            var op = document.createElement('option');
-            op.value = c; op.textContent = c + ' dBTP';
-            cs.appendChild(op);
-        }
-        cs.value = c;
-        $id('alBackup').checked = !!o.backup;
-        $id('alWaitIdle').checked = !!o.waitIdle;
-        $id('alLossless').checked = o.lossless !== false;
-        $id('alAutoLevel').checked = !!o.autoLevel;
-        $id('alMatch').value = o.match === 'lufs' ? 'lufs' : 'speakers';
-        $id('alPlaybackGain').checked = o.playbackGain !== false;
-        var bg = String(Number(o.bgOffset || 10));
-        var bs = $id('alBgOffset');
-        if (!Array.prototype.some.call(bs.options, function (op) { return op.value === bg; })) {
-            var bo = document.createElement('option');
-            bo.value = bg; bo.textContent = bg + ' dB under the show';
-            bs.appendChild(bo);
-        }
-        bs.value = bg;
+        renderRows();
     }
 
-    function saveOptions() {
-        var o = readOptions();
-        options = o;
-        renderRows();
-        return api('POST', 'options', o).catch(function (e) { toast(e.message, false); });
-    }
+    window.audioLevelerSettingSaved = function (name) {
+        api('POST', 'settingschanged').then(function (j) {
+            var wasOn = options && options.autoLevel;
+            showOptions(j.options);
+            // Automatic leveling switched on: look for new uploads straight away.
+            if (name === 'AudioLeveler_autoLevel' && j.options.autoLevel && !wasOn) {
+                setTimeout(autoCheck, 800);
+            }
+        }).catch(function (e) { toast(e.message, false); });
+    };
 
     /* ---------------- songs table ---------------- */
 
@@ -480,11 +436,13 @@
             });
             var current = t === options.target;
             return '<tr' + (current ? ' class="table-active"' : '') + '>' +
-                '<td class="text-nowrap">' + t + ' LUFS' + (current ? ' <span class="badge text-bg-secondary">current</span>' : '') + '</td>' +
+                // The target itself is the button that switches to it.
+                '<td class="text-nowrap">' + (current
+                    ? '<span class="fw-semibold">' + t + '</span> <span class="small text-body-secondary">now</span>'
+                    : '<button type="button" class="btn btn-sm btn-link p-0 al-use-target" data-t="' + t + '" title="Use ' + t + ' LUFS">' + t + '</button>') + '</td>' +
                 '<td class="text-end">' + vol + '</td>' +
                 '<td class="text-end">' + (lim || '–') + '</td>' +
                 '<td class="text-end' + (held ? ' text-warning-emphasis' : '') + '">' + (held || '–') + '</td>' +
-                '<td class="text-end">' + (current ? '' : '<button type="button" class="btn btn-sm btn-link p-0 al-use-target" data-t="' + t + '">Use</button>') + '</td>' +
                 '</tr>';
         }).join('');
         // The loudest target every show song reaches with no limiting at all.
@@ -637,11 +595,17 @@
                     ' video' + (checking === 1 ? '' : 's') + ' for a sound track. They appear here as they\'re checked. ' : '') +
                 (silent ? silent + ' video' + (silent === 1 ? ' has' : 's have') + ' no sound track, so ' +
                     (silent === 1 ? 'it isn\'t' : 'they aren\'t') + ' listed.' : '');
-            // The check runs in the background: look again shortly for its answers.
+            // The check runs in the background, under fppd: make sure it's
+            // going, then look again shortly for its answers.
             clearTimeout(probeTimer);
-            if (checking) { probeTimer = setTimeout(loadFiles, 3000); }
+            if (checking) {
+                api('POST', 'checkvideos').then(function () {
+                    probeTimer = setTimeout(loadFiles, 3000);
+                }).catch(function (e) {
+                    $id('alSilentNote').textContent = e.message;
+                });
+            }
             files = allFiles.filter(inTab);
-            $id('alPlaybackGainRow').classList.toggle('d-none', !pgSupported);
             // Show what each song will actually sound like: its own loudness
             // plus any playback gain fppd applies to it.
             allFiles.forEach(function (f) {
@@ -792,44 +756,19 @@
         if (!$id('audioLeveler')) { return; }
         setTab(tab, true);
 
-        $id('alTargetPreset').addEventListener('change', function () {
-            var custom = this.value === 'custom';
-            $id('alTargetCustom').classList.toggle('d-none', !custom);
-            if (custom) { $id('alTargetCustom').focus(); }
-            saveOptions();
-        });
-        $id('alTargetCustom').addEventListener('change', saveOptions);
         $id('alAdvisorRows').addEventListener('click', function (e) {
             var b = e.target.closest('.al-use-target');
             if (!b) { return; }
-            var t = b.getAttribute('data-t');
-            var preset = $id('alTargetPreset');
-            if (Array.prototype.some.call(preset.options, function (op) { return op.value === t; })) {
-                preset.value = t;
-                $id('alTargetCustom').classList.add('d-none');
-            } else {
-                preset.value = 'custom';
-                $id('alTargetCustom').value = t;
-                $id('alTargetCustom').classList.remove('d-none');
-            }
-            saveOptions();
+            // Pick it in FPP's Target level setting, which saves it the FPP way.
+            var sel = $id('AudioLeveler_target');
+            if (!sel) { return; }
+            sel.value = b.getAttribute('data-t');
+            sel.dispatchEvent(new Event('change'));
         });
-        $id('alCeiling').addEventListener('change', saveOptions);
-        $id('alBackup').addEventListener('change', saveOptions);
-        $id('alWaitIdle').addEventListener('change', saveOptions);
-        $id('alLossless').addEventListener('change', saveOptions);
-        $id('alPlaybackGain').addEventListener('change', saveOptions);
         $id('alTabs').addEventListener('click', function (e) {
             var b = e.target.closest('[data-tab]');
             if (b) { e.preventDefault(); setTab(b.getAttribute('data-tab')); }
         });
-        $id('alAutoLevel').addEventListener('change', function () {
-            saveOptions();
-            // Switched on: look for new songs straight away.
-            if (this.checked) { setTimeout(autoCheck, 800); }
-        });
-        $id('alBgOffset').addEventListener('change', saveOptions);
-        $id('alMatch').addEventListener('change', saveOptions);
 
         $id('alRows').addEventListener('change', function (e) {
             if (e.target.classList.contains('al-sel')) {
@@ -903,15 +842,10 @@
             start('analyze', { files: sel.length ? sel : 'all', scope: tab, force: sel.length > 0 });
         });
         $id('alLevelSel').addEventListener('click', function () {
-            var o = readOptions();
-            o.files = selectedNames();
-            start('level', o);
+            start('level', { files: selectedNames() });
         });
         $id('alLevelAll').addEventListener('click', function () {
-            var o = readOptions();
-            o.files = 'all';
-            o.scope = tab;
-            start('level', o);
+            start('level', { files: 'all', scope: tab });
         });
         $id('alRestoreSel').addEventListener('click', function () {
             var names = files.filter(function (f) { return selected[f.name] && f.canRestore; }).map(function (f) { return f.name; });
@@ -939,7 +873,7 @@
         });
 
         api('GET', 'options').then(function (j) { showOptions(j.options); })
-            .catch(function () { showOptions({ target: -14, ceiling: -1, mode: 'auto', backup: true, waitIdle: true, lossless: true, bgOffset: 10, match: 'speakers' }); })
+            .catch(function () { showOptions({ target: -14, ceiling: -1, backup: true, waitIdle: true, lossless: true, bgOffset: 10, match: 'speakers' }); })
             .then(loadFiles)
             .then(poll)
             .then(autoCheck);

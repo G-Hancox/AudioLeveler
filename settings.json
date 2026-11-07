@@ -1,0 +1,108 @@
+{
+    "settingGroups": {
+        "AudioLevelerLevel": {
+            "description": "Leveling",
+            "settings": ["AudioLeveler_target", "AudioLeveler_ceiling", "AudioLeveler_match", "AudioLeveler_bgOffset"]
+        },
+        "AudioLevelerHow": {
+            "description": "How songs are changed",
+            "settings": ["AudioLeveler_playbackGain", "AudioLeveler_lossless", "AudioLeveler_autoLevel", "AudioLeveler_backup", "AudioLeveler_waitIdle"]
+        }
+    },
+    "settings": {
+        "AudioLeveler_target": {
+            "description": "Target level",
+            "tip": "Every song is brought to this loudness. Use FPP's volume to set how loud the show plays overall. -14 LUFS suits most shows; go louder for an FM transmitter, quieter for a more natural sound with more headroom. The table under this shows what each choice means for your songs.",
+            "type": "select",
+            "options": {
+                "-18 LUFS (quietest, most headroom)": "-18",
+                "-16 LUFS (quieter, more headroom)": "-16",
+                "-14 LUFS (recommended)": "-14",
+                "-12 LUFS (louder)": "-12",
+                "-10 LUFS (loud, for FM transmitters)": "-10"
+            },
+            "default": "-14",
+            "labelClass": "col-12",
+            "fieldClass": "col-12"
+        },
+        "AudioLeveler_ceiling": {
+            "description": "Peak ceiling",
+            "tip": "The loudest peak allowed, so nothing clips or distorts.",
+            "type": "select",
+            "options": {
+                "-0.5 dBTP": "-0.5",
+                "-1 dBTP (recommended)": "-1",
+                "-2 dBTP (extra safe for FM)": "-2"
+            },
+            "default": "-1",
+            "labelClass": "col-12",
+            "fieldClass": "col-12"
+        },
+        "AudioLeveler_match": {
+            "description": "Match songs by",
+            "tip": "Outdoor speakers and FM transmitters barely play deep bass, so a bass-heavy song can measure on target yet sound quieter outside. Speaker matching (the same method as FPP's Normalize) nudges each song's target by up to 4 dB to make up for it. Songs measured before you turn this on need measuring again.",
+            "type": "select",
+            "options": {
+                "How they sound on outdoor speakers (recommended)": "speakers",
+                "Plain loudness (LUFS)": "lufs"
+            },
+            "default": "speakers",
+            "labelClass": "col-12",
+            "fieldClass": "col-12"
+        },
+        "AudioLeveler_bgOffset": {
+            "description": "Background level",
+            "tip": "For songs set to Background in the Fix column, like ambiance and off-hours music: heard, but under the show.",
+            "type": "select",
+            "options": {
+                "6 dB under the show": "6",
+                "10 dB under the show (recommended)": "10",
+                "14 dB under the show": "14",
+                "18 dB under the show": "18"
+            },
+            "default": "10",
+            "labelClass": "col-12",
+            "fieldClass": "col-12"
+        },
+        "AudioLeveler_playbackGain": {
+            "description": "Use FPP's Normalize for volume changes",
+            "tip": "This FPP can turn a song up or down as it plays (File Manager > Normalize). When a song only needs a volume change, FPP's Normalize sets it instead of the file being changed: exact, lossless for every format, and the file stays exactly as uploaded. Songs that need the limiter or compression still have their file rewritten.",
+            "type": "checkbox",
+            "default": "1",
+            "labelClass": "col-10",
+            "fieldClass": "col-2 text-end"
+        },
+        "AudioLeveler_lossless": {
+            "description": "Lossless volume change for MP3s",
+            "tip": "Like MP3Gain: changes an MP3's volume in 1.5 dB steps without re-encoding, so there's no quality loss at all. Used whenever a song only needs turning up or down. Songs that need the limiter or compression, and other formats, are re-encoded at top quality (MP3 at 320 kbps).",
+            "type": "checkbox",
+            "default": "1",
+            "labelClass": "col-10",
+            "fieldClass": "col-2 text-end"
+        },
+        "AudioLeveler_autoLevel": {
+            "description": "Level new uploads automatically",
+            "tip": "Handles songs and videos added or changed after you switch this on (an upload from xLights, say). It checks when FPP starts, whenever a playlist stops, and when you open this page, then measures them and applies each one's fix once no show is playing. Ones set to Skip are left alone, and a file that's still uploading waits for the next check.",
+            "type": "checkbox",
+            "default": "0",
+            "labelClass": "col-10",
+            "fieldClass": "col-2 text-end"
+        },
+        "AudioLeveler_backup": {
+            "description": "Keep originals so they can be restored",
+            "tip": "Keeps the original of each song or video the first time it's changed, in plugindata/AudioLeveler/backups.",
+            "type": "checkbox",
+            "default": "1",
+            "labelClass": "col-10",
+            "fieldClass": "col-2 text-end"
+        },
+        "AudioLeveler_waitIdle": {
+            "description": "Wait until no show is playing",
+            "tip": "When off, work runs at low priority during the show, but a song is never replaced while it is playing.",
+            "type": "checkbox",
+            "default": "1",
+            "labelClass": "col-10",
+            "fieldClass": "col-2 text-end"
+        }
+    }
+}
