@@ -574,10 +574,20 @@ function AudioLevelerOptions()
         if (is_bool($v)) {
             $opt[$k] = ($saved === '1' || $saved === 'true');
         } elseif (is_float($v)) {
-            $opt[$k] = floatval($saved);
+            $f = floatval($saved);
+            $opt[$k] = is_finite($f) ? $f : $v;
         } else {
             $opt[$k] = $saved;
         }
+    }
+    // Saved values can come from anyone on the network (FPP's settings API
+    // has no login by default): keep them in range here, where they're used.
+    // The worker clamps to the same ranges.
+    $opt['target'] = max(-30.0, min(-6.0, $opt['target']));
+    $opt['ceiling'] = max(-6.0, min(0.0, $opt['ceiling']));
+    $opt['bgOffset'] = max(3.0, min(30.0, $opt['bgOffset']));
+    if (!in_array($opt['match'], array('speakers', 'lufs'), true)) {
+        $opt['match'] = 'speakers';
     }
     return $opt;
 }

@@ -2,7 +2,7 @@
 	"repoName": "AudioLeveler",
 	"name": "Audio Leveler",
 	"author": "G-Hancox",
-	"description": "Makes every song in your show play at the same loudness. Measures each song in the music folder (EBU R128 LUFS and true peak) and recommends the gentlest fix for each one: a lossless MP3Gain-style volume change when that's enough, a gentle true-peak limiter only when needed, or volume only, never squashing a song. You can pick a different fix per song: volume only, limiter, light compression, Background (deliberately under the show, for ambiance), or Skip. File names and timing are kept, so sequences stay in sync. Levels the sound of videos too, without touching the picture. Can level new and re-uploaded songs automatically. Originals are backed up for one-click restore, and work waits until no show is playing. Runs entirely on this device using ffmpeg.",
+	"description": "Makes every song in your show play at the same loudness, while songs meant to sit under the show stay there. Measures each song (EBU R128 loudness and true peak) and recommends the gentlest fix: a plain volume change when that's enough (through FPP's own Normalize where FPP has it, or a lossless MP3Gain-style change), and a gentle true-peak limiter only when a song's peaks need it. You can pick a different fix per song: volume only, limiter, light compression, Background (deliberately under the show, for ambiance) or Skip. File names and timing are kept, so sequences stay in sync. Levels the sound of videos too, without touching the picture, and can level new and re-uploaded songs automatically. Originals are backed up for one-click restore, and work waits until no show is playing. Runs entirely on this device using ffmpeg.",
 	"homeURL": "https://github.com/G-Hancox/AudioLeveler",
 	"srcURL": "https://github.com/G-Hancox/AudioLeveler.git",
 	"bugURL": "https://github.com/G-Hancox/AudioLeveler/issues",
@@ -10,7 +10,7 @@
 	"allowUpdates": 1,
 	"releaseNotesStyle": "gitHistory",
 	"privacy": {
-		"summary": "Runs on this device only. Rewrites the songs (and video soundtracks) you choose to level, or new uploads automatically if you switch it on, and keeps backup copies of their originals.",
+		"summary": "Runs on this device only. Levels the songs and video soundtracks you choose (or new uploads, if switched on) through FPP's Normalize or by rewriting the file, keeping backups.",
 		"sends": [],
 		"collects": [
 			{

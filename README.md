@@ -70,7 +70,7 @@ The videos in FPP's videos folder get their own **Videos** tab beside **Songs** 
 
 ## Automatic leveling
 
-With **Level new and replaced songs automatically** switched on, which is off by default, songs added or changed afterwards are measured and given their fix with no page visit needed. That covers re-uploads from xLights' FPP Connect, which would otherwise undo leveling. The plugin checks:
+With **Level new uploads automatically** switched on, which is off by default, songs added or changed afterwards are measured and given their fix with no page visit needed. That covers re-uploads from xLights' FPP Connect, which would otherwise undo leveling. The plugin checks:
 
 - when fppd starts (`lifecycle` callback),
 - when a playlist stops (`playlist` callback, `Action: stop` only; the per-item `playing` calls are ignored),

@@ -91,7 +91,7 @@
                Video backups can be large, so keep an eye on free space.</p>
 
             <h6 class="fw-semibold">Automatic leveling</h6>
-            <p>Switch on <b>Level new and replaced songs automatically</b> and songs you add or change afterwards, such as uploads from xLights,
+            <p>Switch on <b>Level new uploads automatically</b> and songs you add or change afterwards, such as uploads from xLights,
                are measured and given their fix without you opening this page. It checks when FPP starts, whenever a playlist stops,
                and when you open this page, and does the work only once no show is playing. Songs set to Skip are left alone, a file
                that changed in the last minute (probably still uploading) waits for the next check, and songs that were already there
