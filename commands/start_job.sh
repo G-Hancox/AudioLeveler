@@ -1,4 +1,5 @@
 #!/bin/bash
+# Audio Leveler - Copyright (C) 2026 G Hancox. Created by G Hancox, built with Claude. Licensed under the GNU GPL v2.
 # FPP command "Audio Leveler: Start Job". The Audio Leveler page asks fppd to
 # run this, so all of the plugin's background work runs under fppd rather
 # than under the web server. fppd waits for this script and runs it as root,

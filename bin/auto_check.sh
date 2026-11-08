@@ -1,4 +1,5 @@
 #!/bin/bash
+# Audio Leveler - Copyright (C) 2026 G Hancox. Created by G Hancox, built with Claude. Licensed under the GNU GPL v2.
 # Audio Leveler: look for new or replaced songs and level them, when
 # "Level new and replaced songs automatically" is switched on.
 #

@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+# Audio Leveler - Copyright (C) 2026 G Hancox. Created by G Hancox, built with Claude. Licensed under the GNU GPL v2.
 """
 Audio Leveler: find out which videos have a sound track.
 
-Started in the background by the page (api.php) when it lists videos it
-hasn't checked yet, so the page never waits on it. Each video gets one quick
+Started in the background by fppd (the "Audio Leveler: Start Job" command,
+Task "Check videos for sound") when the page lists videos it hasn't checked
+yet, so the page never waits on it. Each video gets one quick
 look at its header with ffprobe (no decoding), two at a time at low priority,
 and the answers go into <data>/videoprobe.json keyed by name, with the file's
 size and date so a replaced video is checked again. Only one of these runs at

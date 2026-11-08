@@ -1,4 +1,5 @@
 #!/bin/bash
+# Audio Leveler - Copyright (C) 2026 G Hancox. Created by G Hancox, built with Claude. Licensed under the GNU GPL v2.
 # Audio Leveler's fppd callbacks: lifecycle, plus playlist "stop" for
 # automatic leveling of new songs (only when that's switched on). Having a callbacks
 # script lets fppd load the plugin (and its "Start Job" command) straight

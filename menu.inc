@@ -1,4 +1,5 @@
 <?php
+// Audio Leveler - Copyright (C) 2026 G Hancox. Created by G Hancox, built with Claude. Licensed under the GNU GPL v2.
 # One entry per menu area (PLUGIN_GUIDELINES 9.1): the leveler page under
 # Content Setup, and a single help page.
 $menuEntries = Array(

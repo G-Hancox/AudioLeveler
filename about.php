@@ -1,3 +1,4 @@
+<!-- Audio Leveler - Copyright (C) 2026 G Hancox. Created by G Hancox, built with Claude. Licensed under the GNU GPL v2. -->
 <div class="mt-2">
     <div class="card mb-3">
         <div class="card-header fw-semibold">Audio Leveler help</div>
@@ -146,6 +147,7 @@
         <div class="card-body">
             <a href="https://github.com/G-Hancox/AudioLeveler">Git repository</a> &middot;
             <a href="https://github.com/G-Hancox/AudioLeveler/issues">Report a problem</a>
+            <div class="small text-body-secondary mt-2">Created by G Hancox, built with Claude. Licensed under the GNU GPL v2.</div>
         </div>
     </div>
 </div>

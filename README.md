@@ -132,6 +132,10 @@ Audio Leveler builds on it: where FPP has Normalize, songs that only need a volu
 
 The log is `logs/plugin-AudioLeveler.log`.
 
+## Credits
+
+Created by **G Hancox**, built with **Claude**.
+
 ## License
 
-GPLv2. See `LICENSE`.
+GPLv2. See `LICENSE`. Copyright (C) 2026 G Hancox.

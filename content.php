@@ -1,4 +1,5 @@
 <?php
+// Audio Leveler - Copyright (C) 2026 G Hancox. Created by G Hancox, built with Claude. Licensed under the GNU GPL v2.
 // Audio Leveler page. The settings are FPP setting rows from settings.json
 // (PrintPluginSetting), saved by FPP itself; the song list talks to api.php.
 require_once __DIR__ . '/api.php';
