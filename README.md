@@ -11,7 +11,7 @@ It measures each song in FPP's music folder (EBU R128 integrated loudness in LUF
 | **Limiter** | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
 | **Compression** | Also narrows the gap between a song's quiet and loud parts (2:1 above -20 dBFS). Good outdoors or over FM. |
 
-Target presets are -18, -16, -14 (default), -12 and -10 LUFS, or you can enter a custom value. The peak ceiling defaults to -1 dBTP.
+The target is one of -18, -16, -14 (default), -12 and -10 LUFS. The peak ceiling defaults to -1 dBTP.
 
 **Target advisor:** once songs are measured, a table under the target shows, for each preset, how many of your show songs get a plain volume change, how many need the gentle limiter and how many would land a little quieter instead of being squashed (Background and Skip songs aren't counted). It also names the loudest target every song reaches with a plain volume change. Tap a level in the table to use it.
 
@@ -20,6 +20,22 @@ Target presets are -18, -16, -14 (default), -12 and -10 LUFS, or you can enter a
 After measuring, a **Fix** column shows what leveling will do to each song (for example `−10.5 dB · lossless`, `+1.3 dB · limiter trims 2.6 dB`, `Fine as is`), with notes for very dynamic songs (compression available) and long tracks (background?). Each song has a dropdown: **Recommended** (where every song starts), **Volume only**, **Limiter**, **Compression**, **Background** or **Skip**. Several songs can be set at once with **Set fix** in the selection bar. It leaves Background and Skip songs alone unless only those are selected. Choices are saved in `plugindata/AudioLeveler/choices.json`.
 
 **Background** levels a song deliberately quieter than the show, 10 dB under the target by default and adjustable. It's meant for ambiance and off-hours tracks that should be heard but sit under everything else. **Skip** leaves a song alone even on *Level all*.
+
+## Settings
+
+The settings are FPP's own setting rows (hover the **?** beside each for help), saved the moment they change:
+
+| Setting | Default | What it does |
+|---|---|---|
+| **Target level** | -14 LUFS | The loudness every song is brought to. FPP's volume sets how loud the show plays overall. |
+| **Peak ceiling** | -1 dBTP | The loudest peak allowed, so nothing clips. |
+| **Match songs by** | Outdoor speakers | Speaker matching (below), or plain LUFS. |
+| **Background level** | 10 dB under | How far under the show Background songs sit. |
+| **Use FPP's Normalize for volume changes** | On | Only on FPP versions that have Normalize (below). |
+| **Lossless volume change for MP3s** | On | MP3Gain-style change when a song only needs turning up or down. |
+| **Level new uploads automatically** | Off | See *Automatic leveling*. |
+| **Keep originals so they can be restored** | On | Backups for one-click restore. |
+| **Wait until no show is playing** | On | When off, work runs at low priority during the show, but a song is never replaced while it's playing. |
 
 ## Matching by outdoor speakers
 
@@ -48,22 +64,23 @@ The status column shows which path each song took.
 - **Timing is kept.** File names, format and sample rate stay the same. Every leveled file is checked against the original, and if its length differs by more than 0.15 s it is thrown away and the original is kept.
 - **It never interrupts the show.** Work runs in the background at the lowest CPU and disk priority, started by fppd (not the web server), so it stops cleanly with fppd. By default it waits until no show is playing, and it never swaps a song while that song is playing.
 - **Files are swapped in one step.** The new file is written separately and renamed over the old one only after it has been checked.
-- **Originals are backed up** to `plugindata/AudioLeveler/backups/` with one-click restore. Leveling again always starts from the original, so trying different settings doesn't build up encoding loss. Backups are kept on uninstall.
+- **Originals are backed up** to `plugindata/AudioLeveler/backups/` with one-click restore. Leveling again always starts from the original, so trying different settings doesn't build up encoding loss. Backups are kept on uninstall, and a Reinstall keeps everything: settings, measurements, per-song fixes and what was leveled.
 
 ## Using it
 
 **Content Setup → Audio Leveler**
 
-1. **Measure songs** lists each song's loudness and peak. Songs far from the target show in red. Songs whose peaks go over full scale, so they clip when played, are flagged.
-2. Check the **Fix** column and change any song's fix if you want something different.
-3. Press **Level all**, or tick songs and press **Level selected**.
-4. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
+1. Pick the **Songs** or **Videos** tab. The buttons only work on the tab that's open.
+2. **Measure songs** lists each song's loudness and peak. Songs far from the target show in red. Songs whose peaks go over full scale, so they clip when played, are flagged.
+3. Check the **Fix** column and change any song's fix if you want something different. The table under the target shows what each target would mean for your songs; tap a level to switch to it.
+4. Press **Level all**, or tick songs and press **Level selected**.
+5. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
 
 ## Videos
 
 The videos in FPP's videos folder get their own **Videos** tab beside **Songs** (it appears once the folder has videos). The two lists are kept separate: each tab has its own numbers, target advisor, filters and selection, and **Measure** / **Level all** only work on the tab that's open, so leveling your songs never touches a video and the other way round. A video's sound is measured and leveled the same way as a song, so a video in a playlist plays as loud as the songs around it. Every fix, recommendation, Background, Skip and speaker matching work the same, and automatic leveling covers new videos too.
 
-- **Only the sound is touched.** Where FPP applies playback gain to videos (newer FPP), a volume-only fix goes there and the file isn't changed at all. Otherwise the file is rewritten with the picture, subtitles and any extra sound tracks copied bit for bit (`-c copy`); only the first sound track is re-encoded (AAC at 256 to 320 kbps for MP4/MOV/MKV, Opus for WebM, MP3 320 kbps for AVI). In testing, the picture stream was byte-identical and audio stayed within 7 ms of the picture.
+- **Only the sound is touched.** On FPP versions with Normalize, a volume-only fix goes through FPP's Normalize and the file isn't changed at all. Otherwise the file is rewritten with the picture, subtitles and any extra sound tracks copied bit for bit (`-c copy`); only the first sound track is re-encoded (AAC at 256 to 320 kbps for MP4/MOV/MKV, Opus for WebM, MP3 320 kbps for AVI). In testing, the picture stream was byte-identical and audio stayed within 7 ms of the picture.
 - Videos with no sound track aren't listed at all (the Videos tab says how many were left out), and jobs skip them. Finding out is a quick look at each video's header (ffprobe, no decoding), done in the background by `bin/probe_videos.py` (two at a time, low priority) so the page opens at once even with hundreds of videos; videos appear on the tab as they're checked. Each answer is remembered until the file changes, so a video re-uploaded with sound shows up.
 - Videos are backed up like songs (in `backups/videos/`), and they can be large, so keep an eye on free space.
 - Internally a video is named `videos/<file>`, the same name FPP's own Normalize uses for it.
@@ -82,7 +99,7 @@ Each check is a quick file comparison run by `bin/auto_check.sh`, which returns 
 
 - **Clipping it can and can't fix.** Leveling brings every peak under the ceiling, so nothing goes over full scale when it plays. Distortion that was recorded or mastered into a song can't be removed by any leveling tool.
 
-- **Leveling is slow on a Pi.** Each song is measured, re-encoded and checked again, which often takes a minute or more per song, so a whole library can take a few hours. It's safe to leave a big job running overnight, because it waits for shows and keeps going with the browser closed. Speed doesn't affect quality.
+- **Leveling is slow on a Pi.** Each song is decoded to measure it, then changed and checked again (a re-encoded song is decoded a few times), which can take a minute or more per song at the low priority it runs at, so a whole library can take a few hours. It's safe to leave a big job running overnight, because it waits for shows and keeps going with the browser closed. Speed doesn't affect quality.
 - **Uploading a song again replaces the leveled copy** (unless automatic leveling is on). This includes re-uploading after fixing a sequence, or xLights' FPP Connect sending the audio along with a sequence. The plugin flags the song as *Replaced since leveling* (there's a **Replaced** filter for it). Level it again to bring it back on target. The new upload becomes the new original for backups.
 
 ## Requirements
@@ -104,12 +121,13 @@ Audio Leveler builds on it: where FPP has Normalize, songs that only need a volu
 | `content.php`, `assets/audioleveler.js` | The Content Setup page |
 | `api.php` | `/api/plugin/AudioLeveler/...` endpoints (also loaded by `content.php` for its helpers) |
 | `bin/leveler.py` | Background worker that runs ffmpeg |
-| `bin/auto_check.sh`, `callbacks.sh` | Automatic leveling triggers (fppd start, playlist stop) |
+| `bin/auto_check.sh` | Automatic leveling check: started from the callbacks and the page, returns at once |
 | `bin/mp3lossless.py` | Lossless MP3 volume change (frame `global_gain` edit, as MP3Gain does) |
 | `commands/start_job.sh` | FPP command "Audio Leveler: Start Job": the page asks fppd to run it for a queued job, the video sound check or an automatic-leveling check. Run on its own it does nothing more than that. |
 | `bin/probe_videos.py` | Background check for which videos have a sound track |
 | `settings.json` | The settings, drawn with FPP's `PrintPluginSetting` |
-| `callbacks.sh` | Lets fppd load the plugin without a restart, and asks a running job to stop after its current song when fppd stops or unloads the plugin |
+| `callbacks.sh` | fppd callbacks: lets fppd load the plugin without a restart, runs the automatic leveling check when fppd starts and when a playlist stops, and asks a running job to stop after its current song when fppd stops or unloads the plugin |
+| `scripts/fpp_install.sh`, `scripts/fpp_uninstall.sh` | Install and uninstall (both safe to run twice; uninstall keeps backups, and a Reinstall keeps everything) |
 | `about.php` | Help page |
 
 The log is `logs/plugin-AudioLeveler.log`.
