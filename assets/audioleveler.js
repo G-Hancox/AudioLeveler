@@ -608,6 +608,10 @@
             allFiles = j.files || [];
             pgSupported = !!j.playbackGainSupported;
             pgVideos = !!j.playbackGainVideos;
+            // On FPP 10.4+ a plain volume change is done by FPP's Normalize, so call it that.
+            CHOICE_NAMES.volume = pgSupported ? 'Normalize' : 'Volume only';
+            var setFixVol = document.querySelector('#alSetFix option[value="volume"]');
+            if (setFixVol) { setFixVol.textContent = CHOICE_NAMES.volume; }
             var nVideos = allFiles.filter(function (f) { return f.video; }).length;
             $id('alTabSongs').querySelector('.badge').textContent = allFiles.length - nVideos;
             $id('alTabVideos').querySelector('.badge').textContent = nVideos;

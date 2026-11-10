@@ -19,7 +19,7 @@ The target is one of -18, -16, -14 (default), -12 and -10 LUFS. The peak ceiling
 
 ### Per-song fixes
 
-After measuring, a **Fix** column shows what leveling will do to each song (for example `−10.5 dB · lossless`, `+1.3 dB · limiter trims 2.6 dB`, `Fine as is`), with notes for very dynamic songs (compression available) and long tracks (background?). Each song has a dropdown: **Recommended** (where every song starts), **Volume only**, **Limiter**, **Compression**, **Background** or **Skip**. Several songs can be set at once with **Set fix** in the selection bar. It leaves Background and Skip songs alone unless only those are selected. Choices are saved in `plugindata/AudioLeveler/choices.json`.
+After measuring, a **Fix** column shows what leveling will do to each song (for example `−10.5 dB · lossless`, `+1.3 dB · limiter trims 2.6 dB`, `Fine as is`), with notes for very dynamic songs (compression available) and long tracks (background?). Each song has a dropdown: **Recommended** (where every song starts), **Volume only** (shown as **Normalize** on FPP 10.4+, where FPP's Normalize does it), **Limiter**, **Compression**, **Background** or **Skip**. Several songs can be set at once with **Set fix** in the selection bar. It leaves Background and Skip songs alone unless only those are selected. Choices are saved in `plugindata/AudioLeveler/choices.json`.
 
 **Background** levels a song deliberately quieter than the show, 10 dB under the target by default and adjustable. It's meant for ambiance and off-hours tracks that should be heard but sit under everything else. **Skip** leaves a song alone even on *Level all*.
 

@@ -94,7 +94,7 @@ function AudioLevelerPrintSetting($name)
                         <li><b>Recommended</b>: the gentlest fix that does the job. A plain volume change (lossless for MP3s) whenever it's enough,
                             the limiter only when it takes 3 dB or less of peak trimming, and otherwise volume only, landing a little quieter
                             rather than squashing the song. Never compresses on its own.</li>
-                        <li><b>Volume only</b>: just turns the song up or down. Never changes the sound, but a quiet song with big peaks may not reach the target.</li>
+                        <li><b>Volume only</b> (shown as <b>Normalize</b> on FPP 10.4 and later, where FPP's Normalize does it without touching the file): just turns the song up or down. Never changes the sound, but a quiet song with big peaks may not reach the target.</li>
                         <li><b>Limiter</b>: turns the song up or down and gently catches the peaks, so it hits the target without clipping.</li>
                         <li><b>Compression</b>: also evens out quiet intros and loud choruses. Good outdoors or over FM, where quiet parts get lost.</li>
                         <li><b>Background</b>: deliberately under the show, by the Background level above. <b>Skip</b>: left alone.</li>

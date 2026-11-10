@@ -45,7 +45,7 @@
 
             <h6 class="fw-semibold">The fixes</h6>
             <ul>
-                <li><b>Volume only</b>: turns the song up or down and nothing else. If a quiet song has big peaks, it stops short of the target rather than clip.</li>
+                <li><b>Volume only</b> (shown as <b>Normalize</b> on FPP 10.4 and later, where FPP's Normalize does it): turns the song up or down and nothing else. If a quiet song has big peaks, it stops short of the target rather than clip.</li>
                 <li><b>Limiter</b>: turns the song up or down, then catches any peaks that would go over the ceiling, so it reaches the target.</li>
                 <li><b>Compression</b>: also narrows the gap between quiet and loud parts of a song (2:1 above -20 dB). Useful outdoors or over an FM transmitter, where soft intros get lost.</li>
             </ul>
