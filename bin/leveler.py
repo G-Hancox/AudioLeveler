@@ -491,11 +491,11 @@ class Worker:
 
     def wait_for_idle(self, name):
         """Hold off while a show is playing, unless the user said not to."""
-        wait = self.req.get("waitIdle", True)
         announced = False
         while True:
             if self.cancelled():
                 return False
+            wait = self.wait_idle_now()
             st = fpp_status()
             playing = now_playing(st)
             here = os.path.basename(name)
@@ -508,13 +508,29 @@ class Worker:
                        else "a show is playing")
                 logging.info("Waiting: %s", why)
                 announced = True
-            self.save_job(state="waiting",
-                          message="Paused until the show stops (%s)." %
-                          ("this song is playing" if playing == here else "a show is playing"))
-            time.sleep(15)
+            msg = "Paused until the show stops (%s)." % (
+                "this song is playing" if playing == here else "a show is playing")
+            if wait and self.cmd != "auto":
+                msg += " Untick \u201cWait until no show is playing\u201d to carry on now."
+            self.save_job(state="waiting", message=msg)
+            time.sleep(5)
         if self.job.get("state") == "waiting":
             self.save_job(state="running", message="")
         return True
+
+    def wait_idle_now(self):
+        """
+        Whether to wait for the show to end, as the setting is right now: the
+        page saves it to auto.json the moment it changes, so unticking it
+        while a job waits lets the job carry on. Automatic leveling always
+        waits.
+        """
+        if self.cmd == "auto":
+            return True
+        saved = read_json(os.path.join(self.data, "auto.json"), {})
+        if "waitIdle" in saved:
+            return bool(saved["waitIdle"])
+        return self.req.get("waitIdle", True)
 
     # -- per-file bookkeeping --------------------------------------------
 

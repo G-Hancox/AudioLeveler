@@ -698,6 +698,9 @@ function AudioLevelerWriteAutoSettings()
         'bgOffset' => max(3, min(30, floatval($opt['bgOffset']))),
         'lossless' => (bool) $opt['lossless'],
         'backup' => (bool) $opt['backup'],
+        // A job waiting for the show to end re-reads this, so unticking
+        // "Wait until no show is playing" lets it carry on at once.
+        'waitIdle' => (bool) $opt['waitIdle'],
         'since' => intval(ReadSettingFromFile('AudioLeveler_autoSince', AUDIOLEVELER_PLUGIN)),
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
         'allowLimiter' => AudioLevelerPlaybackGainSupported() && !empty($opt['allowLimiter']),
