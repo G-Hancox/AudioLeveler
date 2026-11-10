@@ -1,8 +1,8 @@
 # Audio Leveler for FPP
 
-An FPP plugin that makes every song in your show play at the same loudness, so nothing whispers and nothing blasts.
+A companion plugin to FPP's built-in Normalize that makes every song in your show play at the same loudness, so nothing whispers and nothing blasts, while ambiance tracks stay under the show.
 
-**On FPP 10.4 and later it works with FPP's own Normalize.** Normalize does the leveling, so your files are never changed, and Audio Leveler adds what Normalize doesn't: it shows each song's loudness, peaks and clipping, says what it did and what might sound better, keeps ambiance and off-hours tracks at a Background level under the show, levels new and re-uploaded songs automatically, offers the limiter for the few songs Normalize leaves short, and fixes MP3s that play 25 ms late on FPP. On FPP 10.0 to 10.3, which have no Normalize, it levels the files itself (losslessly for MP3s whenever it can).
+**On FPP 10.4 and later, Normalize does the leveling,** so your files are never changed, and Audio Leveler adds what Normalize leaves out: it shows each song's loudness, peaks and clipping, says what it did and what might sound better, keeps ambiance and off-hours tracks at a Background level under the show, levels new and re-uploaded songs automatically, offers the limiter for the few songs Normalize leaves short, and fixes MP3s that play 25 ms late on FPP. On FPP 10.0 to 10.3, which have no Normalize, it levels the files itself (losslessly for MP3s whenever it can).
 
 It measures each song in FPP's music folder (EBU R128 integrated loudness in LUFS, plus true peak), then levels it to a target you choose. Each song gets one of these fixes. Every song starts on **Recommended**, and you can change any song's fix.
 
