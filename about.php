@@ -15,6 +15,11 @@
                 <li>Most songs are mastered louder than -14 LUFS, so after leveling the show may sound quieter overall. Turn FPP's volume up to suit.</li>
             </ol>
 
+            <h6 class="fw-semibold">Simple and Advanced</h6>
+            <p>The settings open in <b>Simple</b>: just the target level, automatic leveling and waiting for the show. The defaults suit most
+               shows, including FM. <b>Advanced</b> adds the peak ceiling, matching, Background level, the limiter, backups, and a table of what
+               each target would mean for your songs. Your choice is remembered in this browser.</p>
+
             <h6 class="fw-semibold">Recommended fixes</h6>
             <p>After measuring, each song gets a recommended fix that puts sound quality first:</p>
             <ul>
@@ -45,9 +50,9 @@
                 <li><b>Compression</b>: also narrows the gap between quiet and loud parts of a song (2:1 above -20 dB). Useful outdoors or over an FM transmitter, where soft intros get lost.</li>
             </ul>
 
-            <h6 class="fw-semibold">Matching by outdoor speakers</h6>
-            <p>Outdoor speakers and FM transmitters barely reproduce deep bass, so a bass-heavy song can measure on target yet sound quieter
-               outside, and a thin one louder. With <b>Match songs by: How they sound on outdoor speakers</b> (the default), each song is
+            <h6 class="fw-semibold">Matching for FM radios and outdoor speakers</h6>
+            <p>Most shows play over FM radio or outdoor speakers, and those barely reproduce deep bass, so a bass-heavy song can measure on target yet sound quieter
+               outside, and a thin one louder. With <b>Match songs by: How they sound on FM radios and outdoor speakers</b> (the default), each song is
                also measured with everything under 120 Hz removed, and its target is nudged by up to 4 dB to make up for it. It's the same
                method and the same numbers as FPP's own Normalize. The Fix column notes the nudge, for example <i>Speaker match: aims 1.8 dB quieter</i>.
                Songs measured before this was on need measuring again; <b>Measure songs</b> does that for them.</p>

@@ -13,7 +13,7 @@ It measures each song in FPP's music folder (EBU R128 integrated loudness in LUF
 | **Limiter** | Turns songs up or down, then a true-peak limiter (4x oversampled) catches anything over the ceiling. Every song reaches the target. |
 | **Compression** | Also narrows the gap between a song's quiet and loud parts (2:1 above -20 dBFS). Good outdoors or over FM. |
 
-The target is one of -18, -16, -14 (default), -12 and -10 LUFS. The peak ceiling defaults to -1 dBTP.
+The target is one of -18, -16, -14 (default), -12 and -10 LUFS. The peak ceiling defaults to -1.5 dBTP, as FPP's Normalize, which leaves room for FM transmitters' treble boost.
 
 **Target advisor:** once songs are measured, a table under the target shows, for each preset, how many of your show songs get a plain volume change, how many need the gentle limiter and how many would land a little quieter instead of being squashed (Background and Skip songs aren't counted). It also names the loudest target every song reaches with a plain volume change. Tap a level in the table to use it.
 
@@ -25,13 +25,13 @@ After measuring, a **Fix** column shows what leveling will do to each song (for 
 
 ## Settings
 
-The settings are FPP's own setting rows (hover the **?** beside each for help), saved the moment they change:
+The settings are FPP's own setting rows (hover the **?** beside each for help), saved the moment they change. **Simple** (the default view) shows just Target level, Level new uploads automatically and Wait until no show is playing; **Advanced** shows everything below plus the target advisor. The defaults suit most shows, including FM. The choice of view is remembered per browser.
 
 | Setting | Default | What it does |
 |---|---|---|
 | **Target level** | -14 LUFS | The loudness every song is brought to. FPP's volume sets how loud the show plays overall. |
-| **Peak ceiling** | -1 dBTP | The loudest peak allowed, so nothing clips. |
-| **Match songs by** | Outdoor speakers | Speaker matching (below), or plain LUFS. |
+| **Peak ceiling** | -1.5 dBTP | The loudest peak allowed, so nothing clips or distorts over FM. |
+| **Match songs by** | FM radios and outdoor speakers | Speaker matching (below), or plain LUFS. |
 | **Background level** | 10 dB under | How far under the show Background songs sit. |
 | **Use the limiter for songs Normalize leaves short** | Off | FPP 10.4+ only. Normalize never turns a song up past where its peaks would distort; with this on, those songs get the limiter instead (rewrites the file, original backed up). You can also pick Limiter for one song in its Fix column. |
 | **Lossless volume change for MP3s** | On | FPP 10.0–10.3 only (no Normalize): MP3Gain-style change when a song only needs turning up or down. |
@@ -39,9 +39,9 @@ The settings are FPP's own setting rows (hover the **?** beside each for help), 
 | **Keep originals so they can be restored** | On | Backups for one-click restore. |
 | **Wait until no show is playing** | On | When off, work runs at low priority during the show, but a song is never replaced while it's playing. |
 
-## Matching by outdoor speakers
+## Matching for FM radios and outdoor speakers
 
-Outdoor speakers and FM barely reproduce deep bass, so a bass-heavy song can read on target in LUFS yet sound quieter outside. With **Match songs by: How they sound on outdoor speakers** (the default), the Measure step also takes each song's *speaker level*: the median short-term loudness with everything under 120 Hz removed (two 120 Hz high-pass stages), skipping the first 3 s and near-silence. That's measured in the same decode pass. Each song's target then moves by `clamp(LUFS − speaker level − 3, −4, +4)` dB, and everything else uses that target: the recommendation, the limiter, Background, and "Fine as is". This is the same method as FPP's Normalize, and in testing its gains matched FPP's to 0.1 dB. Choose **Plain loudness (LUFS)** to turn it off.
+Most shows play over FM, to car and porch radios, or through outdoor speakers, and those barely reproduce deep bass, so a bass-heavy song can read on target in LUFS yet sound quieter to your audience. With **Match songs by: How they sound on FM radios and outdoor speakers** (the default), the Measure step also takes each song's *speaker level*: the median short-term loudness with everything under 120 Hz removed (two 120 Hz high-pass stages), skipping the first 3 s and near-silence. That's measured in the same decode pass. Each song's target then moves by `clamp(LUFS − speaker level − 3, −4, +4)` dB, and everything else uses that target: the recommendation, the limiter, Background, and "Fine as is". This is the same method as FPP's Normalize, and in testing its gains matched FPP's to 0.1 dB. Choose **Plain loudness (LUFS)** to turn it off.
 
 ## How it works with FPP's Normalize (FPP 10.4+)
 

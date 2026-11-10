@@ -38,23 +38,24 @@
         },
         "AudioLeveler_ceiling": {
             "description": "Peak ceiling",
-            "tip": "The loudest peak allowed, so nothing clips or distorts.",
+            "tip": "The loudest peak allowed, so nothing clips or distorts. FM transmitters boost treble before sending, so peaks close to full scale can distort on air; -1.5 (FPP's Normalize uses the same) leaves room for that.",
             "type": "select",
             "options": {
                 "-0.5 dBTP": "-0.5",
-                "-1 dBTP (recommended)": "-1",
+                "-1 dBTP": "-1",
+                "-1.5 dBTP (recommended, FM-safe)": "-1.5",
                 "-2 dBTP (extra safe for FM)": "-2"
             },
-            "default": "-1",
+            "default": "-1.5",
             "labelClass": "col-12",
             "fieldClass": "col-12"
         },
         "AudioLeveler_match": {
             "description": "Match songs by",
-            "tip": "Outdoor speakers and FM transmitters barely play deep bass, so a bass-heavy song can measure on target yet sound quieter outside. Speaker matching (the same method as FPP's Normalize) nudges each song's target by up to 4 dB to make up for it. Songs measured before you turn this on need measuring again.",
+            "tip": "Most shows play over FM, to car radios and porch radios, or through outdoor speakers, and those barely reproduce deep bass, so a bass-heavy song can measure on target yet sound quieter. This matching (the same method as FPP's Normalize, which calls it Show speakers / FM) nudges each song's target by up to 4 dB to make up for it. Songs measured before you turn this on need measuring again.",
             "type": "select",
             "options": {
-                "How they sound on outdoor speakers (recommended)": "speakers",
+                "How they sound on FM radios and outdoor speakers (recommended)": "speakers",
                 "Plain loudness (LUFS)": "lufs"
             },
             "default": "speakers",

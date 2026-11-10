@@ -1038,7 +1038,7 @@ class Worker:
 
     def cmd_level(self):
         target = clamp(float(self.req.get("target", -14)), -30.0, -6.0)
-        ceiling = clamp(float(self.req.get("ceiling", -1)), -6.0, 0.0)
+        ceiling = clamp(float(self.req.get("ceiling", -1.5)), -6.0, 0.0)
         mode = self.req.get("mode", "auto")
         if mode not in MODES:
             mode = "auto"

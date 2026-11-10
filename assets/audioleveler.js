@@ -777,8 +777,26 @@
 
     /* ---------------- wiring ---------------- */
 
+    // Simple shows the few settings most shows need; Advanced shows all.
+    function setView(view, save) {
+        var simple = view !== 'advanced';
+        $id('audioLeveler').classList.toggle('al-simple', simple);
+        Array.prototype.forEach.call(document.querySelectorAll('[data-al-view]'), function (b) {
+            var on = (b.getAttribute('data-al-view') === 'advanced') !== simple;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        if (save) { try { localStorage.setItem('audioLeveler.view', simple ? 'simple' : 'advanced'); } catch (e) { /* no storage */ } }
+    }
+
     function init() {
         if (!$id('audioLeveler')) { return; }
+        var view = 'simple';
+        try { view = localStorage.getItem('audioLeveler.view') || 'simple'; } catch (e) { /* no storage */ }
+        setView(view, false);
+        Array.prototype.forEach.call(document.querySelectorAll('[data-al-view]'), function (b) {
+            b.addEventListener('click', function () { setView(b.getAttribute('data-al-view'), true); });
+        });
         setTab(tab, true);
 
         $id('alAdvisorRows').addEventListener('click', function (e) {
@@ -902,7 +920,7 @@
         });
 
         api('GET', 'options').then(function (j) { showOptions(j.options); })
-            .catch(function () { showOptions({ target: -14, ceiling: -1, backup: true, waitIdle: true, lossless: true, bgOffset: 10, match: 'speakers' }); })
+            .catch(function () { showOptions({ target: -14, ceiling: -1.5, backup: true, waitIdle: true, lossless: true, bgOffset: 10, match: 'speakers' }); })
             .then(loadFiles)
             .then(poll)
             .then(autoCheck);

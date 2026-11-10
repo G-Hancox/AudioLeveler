@@ -37,7 +37,15 @@ function AudioLevelerPrintSetting($name)
         <!-- Settings -->
         <div class="col-12 col-xl-4">
             <div class="card h-100">
-                <div class="card-header fw-semibold">Leveling settings</div>
+                <div class="card-header d-flex align-items-center gap-2">
+                    <span class="fw-semibold me-auto">Leveling settings</span>
+                    <!-- Simple shows the few settings most shows need; Advanced shows all
+                         of them. Remembered per browser, like Air Defender's Lite/Detailed. -->
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Settings view">
+                        <button type="button" class="btn btn-outline-secondary" data-al-view="simple" aria-pressed="true">Simple</button>
+                        <button type="button" class="btn btn-outline-secondary" data-al-view="advanced" aria-pressed="false">Advanced</button>
+                    </div>
+                </div>
                 <div class="card-body">
                     <?php if (AudioLevelerPlaybackGainSupported()) { ?>
                     <div class="alert alert-info small py-2 mb-3">Leveling is done by FPP's own <b>Normalize</b>, so your files are never changed.
@@ -51,7 +59,7 @@ function AudioLevelerPrintSetting($name)
                     </div>
 
                     <!-- Target advisor: what each target would mean for these songs -->
-                    <div id="alAdvisor" class="mb-3 d-none">
+                    <div id="alAdvisor" class="mb-3 d-none al-adv">
                         <div class="small fw-semibold mb-1">What each target means for your songs</div>
                         <div class="form-text mt-0 mb-1">Tap a level to use it.</div>
                         <div class="table-responsive">
@@ -70,7 +78,7 @@ function AudioLevelerPrintSetting($name)
                         <div id="alAdvisorNote" class="form-text"></div>
                     </div>
 
-                    <div class="settingsTable container-fluid px-0 mb-3">
+                    <div class="settingsTable container-fluid px-0 mb-3 al-adv">
                         <?php
                         AudioLevelerPrintSetting('AudioLeveler_ceiling');
                         AudioLevelerPrintSetting('AudioLeveler_match');
@@ -78,6 +86,7 @@ function AudioLevelerPrintSetting($name)
                         ?>
                     </div>
 
+                    <div class="al-adv">
                     <div class="fw-semibold mb-1">Fixes</div>
                     <div class="form-text mt-0 mb-1">Each song uses the fix shown in its <i>Fix</i> column. Every song starts on <b>Recommended</b>;
                         pick another for any song, or tick several and use <b>Set fix</b>.</div>
@@ -90,8 +99,15 @@ function AudioLevelerPrintSetting($name)
                         <li><b>Compression</b>: also evens out quiet intros and loud choruses. Good outdoors or over FM, where quiet parts get lost.</li>
                         <li><b>Background</b>: deliberately under the show, by the Background level above. <b>Skip</b>: left alone.</li>
                     </ul>
+                    </div>
 
                     <div class="settingsTable container-fluid px-0">
+                        <?php
+                        AudioLevelerPrintSetting('AudioLeveler_autoLevel');
+                        AudioLevelerPrintSetting('AudioLeveler_waitIdle');
+                        ?>
+                    </div>
+                    <div class="settingsTable container-fluid px-0 al-adv">
                         <?php
                         // With FPP's Normalize (FPP 10.4+) it does the leveling and files
                         // aren't changed; the limiter is the one thing to opt into. Older
@@ -101,11 +117,11 @@ function AudioLevelerPrintSetting($name)
                         } else {
                             AudioLevelerPrintSetting('AudioLeveler_lossless');
                         }
-                        AudioLevelerPrintSetting('AudioLeveler_autoLevel');
                         AudioLevelerPrintSetting('AudioLeveler_backup');
-                        AudioLevelerPrintSetting('AudioLeveler_waitIdle');
                         ?>
                     </div>
+                    <div class="form-text al-simple-only">More settings (peak ceiling, matching, Background level, the limiter, backups and
+                        what each target means for your songs) are under <b>Advanced</b>. The defaults suit most shows, including FM.</div>
                 </div>
             </div>
         </div>

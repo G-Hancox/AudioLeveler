@@ -52,7 +52,7 @@ function AudioLevelerDefaults()
 {
     return array(
         'target' => -14.0,   // LUFS
-        'ceiling' => -1.0,   // dBTP
+        'ceiling' => -1.5,   // dBTP; FM-safe, as FPP's Normalize
         'bgOffset' => 10.0,  // dB under the target for songs set to Background
         'backup' => true,
         'waitIdle' => true,
