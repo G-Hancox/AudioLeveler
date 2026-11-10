@@ -240,3 +240,64 @@ def apply(src, dst, steps):
             data[a:b] = bits.to_bytes(side, "big")
     with open(dst, "wb") as f:
         f.write(data)
+
+
+def _crc16(data):
+    """CRC-16 (ANSI, LSB first) as used by the LAME tag."""
+    crc = 0
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            crc = (crc >> 1) ^ 0xA001 if crc & 1 else crc >> 1
+    return crc
+
+
+def label_lame_tag(path):
+    """
+    Make a freshly encoded MP3's gapless information readable by GStreamer,
+    which is what FPP plays audio with.
+
+    Every MP3 encoder puts a little silence at the start (the "encoder delay",
+    about 25 ms with LAME) and records how much in the LAME tag, so players can
+    skip it and the song starts exactly where it did before encoding. ffmpeg
+    encodes MP3 with LAME but labels the tag "Lavc..."; GStreamer's MP3 parser
+    only reads a tag labelled "LAME", so it plays that silence and the song
+    lands 25 ms late against its sequence. This relabels the tag "LAME3.100"
+    (the encoder that actually made the audio) and updates the tag's
+    checksum. Nothing else in the file changes.
+
+    Returns True if the tag was relabelled, False if it already said LAME.
+    Raises RuntimeError if the file doesn't have the expected tag.
+    """
+    with open(path, "rb") as f:
+        data = bytearray(f.read())
+    pos = _id3v2_size(data)
+    hdr = _parse_header(data, pos)
+    if hdr is None or hdr.get("free"):
+        raise RuntimeError("no MP3 frame where the gapless tag should be")
+    side = _layout(hdr)[0]
+    x = pos + 4 + side
+    if bytes(data[x:x + 4]) not in (b"Info", b"Xing"):
+        raise RuntimeError("the MP3 has no gapless (Info) frame")
+    flags = int.from_bytes(data[x + 4:x + 8], "big")
+    tag = x + 8 + (4 if flags & 1 else 0) + (4 if flags & 2 else 0) + \
+        (100 if flags & 4 else 0) + (4 if flags & 8 else 0)
+    frame_end = pos + hdr["length"]
+    if tag + 24 > frame_end:
+        raise RuntimeError("the MP3's gapless tag is cut short")
+    label = bytes(data[tag:tag + 4])
+    if label == b"LAME":
+        return False
+    if label not in (b"Lavc", b"Lavf"):
+        raise RuntimeError("unexpected MP3 gapless tag %r" % label)
+    data[tag:tag + 9] = b"LAME3.100"
+    # LAME's tag checksum covers the frame up to the checksum itself. Older
+    # ffmpeg sometimes wrote the tag in a frame too short to hold the checksum
+    # (the delay still fits, which is all players read); then there is none
+    # to update, and writing one would overwrite the next frame.
+    if tag + 36 <= frame_end:
+        data[tag + 34:tag + 36] = _crc16(data[pos:tag + 34]).to_bytes(2, "big")
+    with open(path, "r+b") as f:
+        f.seek(0)
+        f.write(data)
+    return True

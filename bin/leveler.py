@@ -43,6 +43,9 @@ AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".ogg", ".oga", ".wav", ".flac"}
 
 # Videos are named "videos/<file>" everywhere (the page, our JSON files and
 # FPP's media_gain.json alike), so they never clash with a song's name.
+# ffmpeg's AAC encoder starts every stream with 1024 samples of lead-in.
+AAC_LEAD_IN = 1024
+
 VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".mkv", ".webm", ".avi"}
 VIDEO_PREFIX = "videos/"
 
@@ -861,6 +864,14 @@ class Worker:
             if steps is not None:
                 try:
                     mp3lossless.apply(src, tmp, steps)
+                    # An MP3 that ffmpeg made earlier carries a "Lavc" gapless
+                    # tag, which FPP (GStreamer) can't read, so it plays 25 ms
+                    # late. Relabelling it puts the song back in step with the
+                    # sequence; a file without such a tag is left as it is.
+                    try:
+                        mp3lossless.label_lame_tag(tmp)
+                    except RuntimeError:
+                        pass
                     out = measure(tmp, speakers=self.speakers())
                     if out["TP"] is not None and out["TP"] > ceiling + 0.3:
                         raise mp3lossless.NotLossless("peaks came out above the ceiling")
@@ -889,6 +900,11 @@ class Worker:
                            "-c", "copy", "-filter:a:0", af, "-ac:a:0", str(info["ch"])] + \
                         video_codec_args(ext, info) + [tmp]
                 else:
+                    if ext == ".aac":
+                        # A raw AAC stream can't record the encoder's 1024-sample
+                        # lead-in, so every player plays it: start the input that
+                        # much later and the song stays where it was in time.
+                        af = "atrim=start_sample=%d,asetpts=PTS-STARTPTS," % AAC_LEAD_IN + af
                     cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src, "-vn",
                            "-map", "0:a:0", "-map_metadata", "0", "-af", af,
                            "-ar", str(info["sr"]), "-ac", str(info["ch"])] + codec_args(ext, info) + [tmp]
@@ -898,6 +914,14 @@ class Worker:
                     if os.path.exists(tmp):
                         os.remove(tmp)
                     return False, "ffmpeg failed: " + tail[0]
+                if ext == ".mp3" and not video:
+                    # Without this, FPP (GStreamer) plays the encoder's lead-in
+                    # and the song lands 25 ms late against its sequence.
+                    try:
+                        mp3lossless.label_lame_tag(tmp)
+                    except RuntimeError as ex:
+                        os.remove(tmp)
+                        return False, "kept the original: couldn't keep the new MP3 in sync (%s)" % ex
                 # Check the new file before it goes anywhere near the show.
                 out = measure(tmp, speakers=self.speakers())
                 miss = None if out["I"] is None else expected - out["I"]
