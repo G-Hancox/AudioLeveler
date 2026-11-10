@@ -2,6 +2,8 @@
 
 An FPP plugin that makes every song in your show play at the same loudness, so nothing whispers and nothing blasts.
 
+**On FPP 10.4 and later it works with FPP's own Normalize.** Normalize does the leveling, so your files are never changed, and Audio Leveler adds what Normalize doesn't: it shows each song's loudness, peaks and clipping, says what it did and what might sound better, keeps ambiance and off-hours tracks at a Background level under the show, levels new and re-uploaded songs automatically, offers the limiter for the few songs Normalize leaves short, and fixes MP3s that play 25 ms late on FPP. On FPP 10.0 to 10.3, which have no Normalize, it levels the files itself (losslessly for MP3s whenever it can).
+
 It measures each song in FPP's music folder (EBU R128 integrated loudness in LUFS, plus true peak), then levels it to a target you choose. Each song gets one of these fixes. Every song starts on **Recommended**, and you can change any song's fix.
 
 | Fix | What it does |
@@ -31,8 +33,8 @@ The settings are FPP's own setting rows (hover the **?** beside each for help), 
 | **Peak ceiling** | -1 dBTP | The loudest peak allowed, so nothing clips. |
 | **Match songs by** | Outdoor speakers | Speaker matching (below), or plain LUFS. |
 | **Background level** | 10 dB under | How far under the show Background songs sit. |
-| **Use FPP's Normalize for volume changes** | On | Only on FPP versions that have Normalize (below). |
-| **Lossless volume change for MP3s** | On | MP3Gain-style change when a song only needs turning up or down. |
+| **Use the limiter for songs Normalize leaves short** | Off | FPP 10.4+ only. Normalize never turns a song up past where its peaks would distort; with this on, those songs get the limiter instead (rewrites the file, original backed up). You can also pick Limiter for one song in its Fix column. |
+| **Lossless volume change for MP3s** | On | FPP 10.0–10.3 only (no Normalize): MP3Gain-style change when a song only needs turning up or down. |
 | **Level new uploads automatically** | Off | See *Automatic leveling*. |
 | **Keep originals so they can be restored** | On | Backups for one-click restore. |
 | **Wait until no show is playing** | On | When off, work runs at low priority during the show, but a song is never replaced while it's playing. |
@@ -41,13 +43,16 @@ The settings are FPP's own setting rows (hover the **?** beside each for help), 
 
 Outdoor speakers and FM barely reproduce deep bass, so a bass-heavy song can read on target in LUFS yet sound quieter outside. With **Match songs by: How they sound on outdoor speakers** (the default), the Measure step also takes each song's *speaker level*: the median short-term loudness with everything under 120 Hz removed (two 120 Hz high-pass stages), skipping the first 3 s and near-silence. That's measured in the same decode pass. Each song's target then moves by `clamp(LUFS − speaker level − 3, −4, +4)` dB, and everything else uses that target: the recommendation, the limiter, Background, and "Fine as is". This is the same method as FPP's Normalize, and in testing its gains matched FPP's to 0.1 dB. Choose **Plain loudness (LUFS)** to turn it off.
 
-## Playback gain through FPP's Normalize (FPP versions that have it)
+## How it works with FPP's Normalize (FPP 10.4+)
 
-Newer FPP can turn each song or video up or down as it plays (File Manager > **Normalize**), and ignores that gain once the file's size changes. Where FPP has it, with **Use FPP's Normalize for volume changes** on (the default), a song that only needs a volume change is leveled there instead of in the file: exact (0.1 dB), lossless for every format, and the file is left as uploaded. A file the plugin rewrote earlier gets its original back first.
+FPP 10.4 added **Normalize** to File Manager: it measures each song and stores a volume change for it that fppd applies as the song plays, so files are never rewritten (FPP ignores the setting once a file's size changes). Audio Leveler is built around it:
 
-The gains are FPP's own data, so the plugin never reads or writes the file they're kept in. It asks FPP's Normalize to set or remove them, with the same request File Manager makes (`run_normalize.php`, one file at a time, with the song's target, the peak ceiling and the matching mode). FPP's Normalize measures the song and works out the gain with the same method the plugin uses, so the results match. If someone is already running a Normalize, the plugin waits its turn (up to 5 minutes), and if FPP's Normalize can't do it, the song's file is leveled instead. The page reads the gains with FPP's own helper (`AN_LoadGains()`), shows them in each song's loudness, and labels gains set from File Manager as *FPP Normalize*. Songs that need the limiter or compression are rewritten as before, and any gain left for them is removed through FPP's Normalize. Restore removes the gain the same way.
+- **Normalize does the leveling.** Every fix that's a volume change, including Background, is set through FPP's Normalize with the same request File Manager makes (`run_normalize.php`, one file at a time, with the song's target, the peak ceiling and the matching mode), so files stay exactly as uploaded and timing can't drift. The plugin never reads or writes the file the settings are kept in: it reads them with FPP's own helper (`AN_LoadGains()`). If someone is already running a Normalize, it waits its turn (up to 5 minutes); if Normalize can't do a song, that song's file is leveled instead.
+- **What Normalize doesn't show, the page does:** each song's loudness and true peak before and after, clipping, the spread across your show, the target advisor, and a note per song: *its peaks hold it 2.1 dB short*, *sounds like ambiance: Background keeps it under the show*, *plays 25 ms late on FPP*.
+- **The limiter is opt-in.** Normalize never turns a song up past where its peaks would distort, so a quiet, peaky song lands a little short. Switch on **Use the limiter for songs Normalize leaves short**, or pick **Limiter** for one song, and that song's file is rewritten with the 4x-oversampled limiter instead (original backed up). Compression works the same way.
+- **Restore** removes the Normalize setting (or puts a rewritten file's original back). Songs you normalized yourself in File Manager are labelled *FPP Normalize*, and their numbers include that change.
 
-Uninstalling the plugin leaves those gains in place, just as rewritten songs stay leveled. Remove them in File Manager > Normalize > Remove Normalization if you want songs played as recorded.
+Uninstalling the plugin leaves the Normalize settings in place, just as rewritten songs stay leveled. Remove them in File Manager > Normalize > Remove Normalization if you want songs played as recorded.
 
 ## Sound quality
 
@@ -99,7 +104,7 @@ Each check is a quick file comparison run by `bin/auto_check.sh`, which returns 
 
 - **Clipping it can and can't fix.** Leveling brings every peak under the ceiling, so nothing goes over full scale when it plays. Distortion that was recorded or mastered into a song can't be removed by any leveling tool.
 
-- **Timing stays frame-accurate.** FPP plays audio through GStreamer, which only reads an MP3's gapless information from a tag labelled "LAME". ffmpeg encodes MP3s with LAME but labels that tag "Lavc", so GStreamer would play the encoder's lead-in and the song would land about 25 ms late against its sequence. Every MP3 the plugin re-encodes or changes losslessly gets its tag relabelled, which also puts older ffmpeg-made MP3s back in step. Raw `.aac` files can't record the lead-in, so the plugin starts the input 1024 samples later instead. Checked against ffmpeg's decoding (what xLights uses) and GStreamer's rules: 0 samples off for every format and fix.
+- **Timing stays frame-accurate.** FPP plays audio through GStreamer, which only reads an MP3's gapless information from a tag labelled "LAME". ffmpeg encodes MP3s with LAME but labels that tag "Lavc", so GStreamer would play the encoder's lead-in and the song would land about 25 ms late against its sequence. Every MP3 the plugin re-encodes or changes losslessly gets its tag relabelled, and **Fix MP3 timing** (on the Songs tab, shown when it finds any) does the same for MP3s ffmpeg made before: only that 9-byte label and its checksum change; the audio, size and file date stay the same, so measurements and Normalize settings stay valid. Raw `.aac` files can't record the lead-in, so the plugin starts the input 1024 samples later instead. Checked against ffmpeg's decoding (what xLights uses) and GStreamer's rules: 0 samples off for every format and fix.
 - **Leveling is slow on a Pi.** Each song is decoded to measure it, then changed and checked again (a re-encoded song is decoded a few times), which can take a minute or more per song at the low priority it runs at, so a whole library can take a few hours. It's safe to leave a big job running overnight, because it waits for shows and keeps going with the browser closed. Speed doesn't affect quality.
 - **Uploading a song again replaces the leveled copy** (unless automatic leveling is on). This includes re-uploading after fixing a sequence, or xLights' FPP Connect sending the audio along with a sequence. The plugin flags the song as *Replaced since leveling* (there's a **Replaced** filter for it). Level it again to bring it back on target. The new upload becomes the new original for backups.
 
@@ -111,9 +116,7 @@ The settings are FPP setting rows (`settings.json`, drawn with `PrintPluginSetti
 
 ## Audio Leveler or FPP's built-in Normalize?
 
-Newer FPP builds include a **Normalize** button in File Manager that stores a per-song gain and applies it at playback without rewriting files. That approach is lossless and covers many shows. It has no limiter, though, so a quiet song can only be raised as far as its peaks allow.
-
-Audio Leveler builds on it: where FPP has Normalize, songs that only need a volume change are leveled through it (see above). Songs that need more get their file rewritten (losslessly for MP3s that only need a volume change), with a true-peak limiter or light compression, so every song can reach the target, including louder targets for FM, with every peak kept under the ceiling. On FPP releases without Normalize, files are rewritten for every fix. FPP skips its own playback gain for any file that has changed since it was normalized, so the two never stack.
+Both, on FPP 10.4+: Audio Leveler drives FPP's Normalize (see above) and adds the readout, suggestions, Background levels, automatic leveling, the optional limiter and the MP3 timing fix. On older FPP, which has no Normalize, Audio Leveler does the leveling itself.
 
 ## Files
 

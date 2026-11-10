@@ -104,21 +104,22 @@
                <span class="badge text-bg-warning">Replaced since leveling</span> and appears under the <b>Replaced</b> filter.
                Level it again and it's back on target, or switch on automatic leveling to have it done for you. The new upload becomes the new original for backups.</p>
 
-            <h6 class="fw-semibold">Audio Leveler or FPP's Normalize?</h6>
-            <p>Newer FPP versions have a <b>Normalize</b> button in File Manager that adjusts each song's volume during playback without changing the file.
-               That's lossless and fine for many shows. Audio Leveler rewrites the files instead (losslessly for MP3s that only need a volume change), which lets it use a peak limiter or light compression,
-               so quiet songs reach the full target with every peak kept under the ceiling. Use one or the other for a given song;
-               FPP ignores its own Normalize setting for a file that has been changed since it was normalized, so they won't stack.</p>
+            <h6 class="fw-semibold">Working with FPP's Normalize (FPP 10.4 and later)</h6>
+            <p>FPP 10.4 has a <b>Normalize</b> button in File Manager that turns each song up or down as it plays, without changing the file.
+               On those versions Audio Leveler uses it for all leveling, so your files are never changed and timing can't drift.
+               What Audio Leveler adds is everything Normalize doesn't show or do: each song's loudness, peaks and clipping before and after,
+               notes on what might sound better, <b>Background</b> levels for ambiance, automatic leveling of new uploads, and the limiter.</p>
+            <p>Normalize never turns a song up past where its peaks would distort, so a quiet song with sharp peaks lands a little short; its note says by how much.
+               To bring it all the way up, pick <b>Limiter</b> in its Fix column, or switch on <b>Use the limiter for songs Normalize leaves short</b>.
+               Those songs have their file rewritten (the original is kept). <b>Restore</b> removes the Normalize setting. Songs you normalized yourself in
+               File Manager show as <span class="badge text-bg-info">FPP Normalize</span>. Uninstalling Audio Leveler leaves the Normalize settings in place;
+               remove them in File Manager if you want songs played as recorded. On FPP 10.0 to 10.3, which have no Normalize, Audio Leveler changes the files itself.</p>
 
-            <h6 class="fw-semibold">FPP's Normalize (newer FPP versions)</h6>
-            <p>Newer FPP versions can turn a song up or down as it plays; that's File Manager's <b>Normalize</b>. On those versions,
-               with <b>Use FPP's Normalize for volume changes</b> on (it is by default), a song that only needs a volume change is
-               leveled by FPP's Normalize instead of in its file. That's exact to a tenth of a dB, lossless for every format, and the file stays exactly
-               as uploaded. Only songs that need the limiter or compression have their file rewritten. A song leveled this way shows
-               <i>playback gain</i> in its status, and <b>Restore</b> simply removes the gain. Songs you normalized yourself in File Manager are shown as
-               <span class="badge text-bg-info">FPP Normalize</span>, and their numbers include that gain. Uninstalling Audio Leveler leaves
-               these gains in place; remove them in File Manager if you want songs played as recorded. On older FPP versions this setting
-               doesn't appear and every fix changes the file.</p>
+            <h6 class="fw-semibold">MP3s that play 25 ms late</h6>
+            <p>FPP's player only reads an MP3's timing information when it's labelled the way LAME labels it. MP3s made with ffmpeg (including ones leveled by
+               other tools) label it differently, so FPP plays the encoder's short lead-in and the song starts about 25 ms late against its sequence.
+               When the page finds any, a <b>Fix MP3 timing</b> button appears on the Songs tab: it relabels just that tag. The audio, file size and date stay the same.
+               Songs Audio Leveler rewrites are always labelled correctly.</p>
 
             <h6 class="fw-semibold">Sound quality</h6>
             <p>Each song gets the gentlest treatment that does the job:</p>

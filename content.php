@@ -39,6 +39,11 @@ function AudioLevelerPrintSetting($name)
             <div class="card h-100">
                 <div class="card-header fw-semibold">Leveling settings</div>
                 <div class="card-body">
+                    <?php if (AudioLevelerPlaybackGainSupported()) { ?>
+                    <div class="alert alert-info small py-2 mb-3">Leveling is done by FPP's own <b>Normalize</b>, so your files are never changed.
+                        Audio Leveler shows you what it did, suggests what might sound better, and adds what Normalize doesn't:
+                        Background levels, automatic leveling of new uploads, and the limiter when you want it.</div>
+                    <?php } ?>
                     <!-- Settings are FPP's own setting rows (settings.json), saved as
                          soon as they change; audioLevelerSettingSaved() refreshes the page. -->
                     <div class="settingsTable container-fluid px-0">
@@ -88,11 +93,14 @@ function AudioLevelerPrintSetting($name)
 
                     <div class="settingsTable container-fluid px-0">
                         <?php
-                        // FPP's Normalize is only on newer FPP versions.
+                        // With FPP's Normalize (FPP 10.4+) it does the leveling and files
+                        // aren't changed; the limiter is the one thing to opt into. Older
+                        // FPP has no Normalize, so files are changed, losslessly for MP3s.
                         if (AudioLevelerPlaybackGainSupported()) {
-                            AudioLevelerPrintSetting('AudioLeveler_playbackGain');
+                            AudioLevelerPrintSetting('AudioLeveler_allowLimiter');
+                        } else {
+                            AudioLevelerPrintSetting('AudioLeveler_lossless');
                         }
-                        AudioLevelerPrintSetting('AudioLeveler_lossless');
                         AudioLevelerPrintSetting('AudioLeveler_autoLevel');
                         AudioLevelerPrintSetting('AudioLeveler_backup');
                         AudioLevelerPrintSetting('AudioLeveler_waitIdle');
@@ -143,6 +151,11 @@ function AudioLevelerPrintSetting($name)
                     </p>
 
                     <div id="alSilentNote" class="small text-body-secondary mb-2 d-none"></div>
+                    <div id="alLateNote" class="alert alert-warning d-flex flex-wrap align-items-center gap-2 py-2 small d-none">
+                        <span class="me-auto"><b id="alLateCount"></b> play about 25 ms late on FPP: ffmpeg made them and labelled their
+                            timing tag in a way FPP's player can't read. Fixing it changes only that label; the audio stays exactly the same.</span>
+                        <button id="alRetime" type="button" class="buttons btn btn-sm btn-warning">Fix MP3 timing</button>
+                    </div>
 
                     <!-- At-a-glance numbers -->
                     <div id="alStats" class="row g-2 mb-3"></div>

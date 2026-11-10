@@ -2,11 +2,22 @@
     "settingGroups": {
         "AudioLevelerLevel": {
             "description": "Leveling",
-            "settings": ["AudioLeveler_target", "AudioLeveler_ceiling", "AudioLeveler_match", "AudioLeveler_bgOffset"]
+            "settings": [
+                "AudioLeveler_target",
+                "AudioLeveler_ceiling",
+                "AudioLeveler_match",
+                "AudioLeveler_bgOffset"
+            ]
         },
         "AudioLevelerHow": {
             "description": "How songs are changed",
-            "settings": ["AudioLeveler_playbackGain", "AudioLeveler_lossless", "AudioLeveler_autoLevel", "AudioLeveler_backup", "AudioLeveler_waitIdle"]
+            "settings": [
+                "AudioLeveler_allowLimiter",
+                "AudioLeveler_lossless",
+                "AudioLeveler_autoLevel",
+                "AudioLeveler_backup",
+                "AudioLeveler_waitIdle"
+            ]
         }
     },
     "settings": {
@@ -64,11 +75,11 @@
             "labelClass": "col-12",
             "fieldClass": "col-12"
         },
-        "AudioLeveler_playbackGain": {
-            "description": "Use FPP's Normalize for volume changes",
-            "tip": "This FPP can turn a song up or down as it plays (File Manager > Normalize). When a song only needs a volume change, FPP's Normalize sets it instead of the file being changed: exact, lossless for every format, and the file stays exactly as uploaded. Songs that need the limiter or compression still have their file rewritten.",
+        "AudioLeveler_allowLimiter": {
+            "description": "Use the limiter for songs Normalize leaves short",
+            "tip": "FPP's Normalize never turns a song up past where its peaks would distort, so a quiet song with sharp peaks can end up a little under the target. With this on, those songs get Audio Leveler's gentle 4x-oversampled limiter instead, which brings them all the way up but rewrites the file (the original is kept as a backup). Off, files are never changed and those songs simply land a little quieter. You can also pick Limiter for a single song in its Fix column.",
             "type": "checkbox",
-            "default": "1",
+            "default": "0",
             "labelClass": "col-10",
             "fieldClass": "col-2 text-end"
         },

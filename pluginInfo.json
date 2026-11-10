@@ -2,7 +2,7 @@
 	"repoName": "AudioLeveler",
 	"name": "Audio Leveler",
 	"author": "G-Hancox",
-	"description": "Makes every song in your show play at the same loudness, while songs meant to sit under the show stay there. Measures each song (EBU R128 loudness and true peak) and recommends the gentlest fix: a plain volume change when that's enough (through FPP's own Normalize where FPP has it, or a lossless MP3Gain-style change), and a gentle true-peak limiter only when a song's peaks need it. You can pick a different fix per song: volume only, limiter, light compression, Background (deliberately under the show, for ambiance) or Skip. File names and timing are kept, so sequences stay in sync. Levels the sound of videos too, without touching the picture, and can level new and re-uploaded songs automatically. Originals are backed up for one-click restore, and work waits until no show is playing. Runs entirely on this device using ffmpeg.",
+	"description": "Makes every song in your show play at the same loudness, while songs meant to sit under the show stay there. On FPP 10.4+ it works with FPP's own Normalize, so files are never changed, and adds what Normalize doesn't: each song's loudness, peaks and clipping, notes on what it did and what might sound better, Background levels for ambiance, automatic leveling of new and re-uploaded songs, an optional true-peak limiter for songs Normalize leaves short, and a fix for MP3s that play 25 ms late on FPP. On FPP 10.0-10.3 it levels the files itself (losslessly for MP3s where it can) and keeps backups. Videos too, without touching the picture. Work waits until no show is playing. Runs entirely on this device using ffmpeg.",
 	"homeURL": "https://github.com/G-Hancox/AudioLeveler",
 	"srcURL": "https://github.com/G-Hancox/AudioLeveler.git",
 	"bugURL": "https://github.com/G-Hancox/AudioLeveler/issues",
@@ -10,7 +10,7 @@
 	"allowUpdates": 1,
 	"releaseNotesStyle": "gitHistory",
 	"privacy": {
-		"summary": "Runs on this device only. Levels the songs and video soundtracks you choose (or new uploads, if switched on) through FPP's Normalize or by rewriting the file, keeping backups.",
+		"summary": "Runs on this device only. Levels songs through FPP's Normalize (10.4+) or by rewriting them (older FPP, or limiter by choice), with backups.",
 		"sends": [],
 		"collects": [
 			{
@@ -26,11 +26,11 @@
 		"systemChanges": [
 			{
 				"kind": "core-settings",
-				"what": "Replaces songs and videos with leveled versions when you level them, or new uploads if switched on. Video pictures are untouched. Originals backed up."
+				"what": "Sets per-song volume through FPP's Normalize on FPP 10.4+ (files unchanged), for the songs and videos you level or new uploads if switched on."
 			},
 			{
 				"kind": "core-settings",
-				"what": "On FPP versions with File Manager > Normalize, volume-only fixes are set through FPP's Normalize (a per-song playback gain) instead of in the file."
+				"what": "Rewrites a song only without Normalize (FPP 10.0-10.3), when you choose the limiter or compression, or to fix an MP3's timing tag. Backed up."
 			}
 		],
 		"closedCode": false,

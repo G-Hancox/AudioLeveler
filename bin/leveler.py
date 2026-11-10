@@ -787,6 +787,11 @@ class Worker:
             mode = recommend(base["I"], base["TP"], target, ceiling)
             if mode == "none":
                 mode = "volume"  # within half a dB: the near-target rule below leaves it be
+            # Where FPP's Normalize does the leveling, the file is never
+            # rewritten unless the user allows the limiter: a song whose peaks
+            # hold it back simply lands a little short, as in Normalize.
+            if mode == "limit" and self.playback_gain_on() and not self.req.get("allowLimiter"):
+                mode = "volume"
         pre = COMPRESSOR if mode == "compress" else None
         m = measure(src, pre) if pre else base
         before = base["I"]
@@ -1151,6 +1156,47 @@ class Worker:
                 logging.warning("%s: could not measure: %s", name, ex)
         self.cmd_level()
 
+    def cmd_retime(self):
+        """
+        Put MP3s that play about 25 ms late on FPP back in step with their
+        sequences: relabel the gapless tag ffmpeg wrote so GStreamer reads it
+        (see mp3lossless.label_lame_tag). Only those 9 bytes and the tag's
+        checksum change; the audio, the size and the file date stay the same,
+        so measurements and FPP's Normalize settings for it stay valid.
+        """
+        files = [f for f in self.files_requested() if f.lower().endswith(".mp3") and not is_video(f)]
+        self.save_job(total=len(files))
+        for i, name in enumerate(files):
+            if self.cancelled():
+                break
+            self.save_job(current=name, done=i)
+            path = self.path_of(name)
+            if not mp3lossless.plays_late_on_fpp(path):
+                self.result(name, True, "already plays on time")
+                continue
+            if not self.wait_for_idle(name):
+                break
+            st = os.stat(path)
+            tmp = os.path.join(self.tmpdir, "retime.mp3")
+            try:
+                if self.req.get("backup", True):
+                    bpath = self.backup_path(name)
+                    if not os.path.exists(bpath):
+                        os.makedirs(os.path.dirname(bpath), exist_ok=True)
+                        shutil.copy2(path, bpath + ".part")
+                        os.replace(bpath + ".part", bpath)
+                shutil.copy2(path, tmp)
+                mp3lossless.label_lame_tag(tmp)
+                os.utime(tmp, ns=(st.st_atime_ns, st.st_mtime_ns))
+                os.replace(tmp, path)
+            except (OSError, RuntimeError) as ex:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                self.result(name, False, "left as it was: %s" % ex)
+                continue
+            self.result(name, True, "now in step with its sequence (played 25 ms late on FPP)")
+        self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
+
     def cmd_restore(self):
         files = [f for f in self.files_requested_or_backups()]
         self.save_job(total=len(files))
@@ -1239,7 +1285,7 @@ def main():
         sys.argv = [sys.argv[0]] + argv
 
     ap = argparse.ArgumentParser(description="FPP Audio Leveler worker")
-    ap.add_argument("command", choices=("analyze", "level", "restore", "auto"))
+    ap.add_argument("command", choices=("analyze", "level", "restore", "retime", "auto"))
     ap.add_argument("--music", help="FPP music folder (auto: taken from auto.json)")
     ap.add_argument("--videos", help="FPP videos folder; videos are left out without it")
     ap.add_argument("--data", required=True, help="plugindata folder for this plugin")

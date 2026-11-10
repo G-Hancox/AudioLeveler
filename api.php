@@ -10,6 +10,7 @@
  *   POST   analyze    measure loudness            body: {"files": [...]|"all", "scope": "songs"|"videos", "force": bool}
  *   POST   level      level songs                 body: {"files": [...]|"all", "target", "ceiling", "mode", "backup", "waitIdle"}
  *   POST   restore    put originals back          body: {"files": [...]|"all"}
+ *   POST   retime     MP3s that play 25 ms late on FPP back in step   body: {"files": [...]|"all"}
  *   POST   cancel     stop the running job after the current song
  *   GET    options    the saved settings (FPP saves them: settings.json + PrintPluginSetting)
  *   POST   settingschanged   the page saved a setting: refresh what background work uses
@@ -31,6 +32,7 @@ function getEndpointsAudioLeveler()
         array('method' => 'POST', 'endpoint' => 'analyze', 'callback' => 'AudioLevelerAnalyze'),
         array('method' => 'POST', 'endpoint' => 'level', 'callback' => 'AudioLevelerLevel'),
         array('method' => 'POST', 'endpoint' => 'restore', 'callback' => 'AudioLevelerRestore'),
+        array('method' => 'POST', 'endpoint' => 'retime', 'callback' => 'AudioLevelerRetime'),
         array('method' => 'POST', 'endpoint' => 'cancel', 'callback' => 'AudioLevelerCancel'),
         array('method' => 'GET', 'endpoint' => 'options', 'callback' => 'AudioLevelerGetOptions'),
         array('method' => 'POST', 'endpoint' => 'settingschanged', 'callback' => 'AudioLevelerSettingsChanged'),
@@ -56,7 +58,7 @@ function AudioLevelerDefaults()
         'waitIdle' => true,
         'lossless' => true,  // change MP3 volume losslessly when no limiting is needed
         'autoLevel' => false, // level new and replaced songs automatically
-        'playbackGain' => true, // use FPP's playback gain for volume-only fixes, where FPP has it
+        'allowLimiter' => false, // where FPP has Normalize: let the limiter rewrite songs Normalize leaves short
         'match' => 'speakers', // speakers (ignore deep bass, as FPP's Normalize) | lufs
     );
 }
@@ -131,7 +133,8 @@ function AudioLevelerLoadGains()
 // What the worker needs to use playback gain (or not).
 function AudioLevelerPlaybackGainRequest($opt)
 {
-    $on = AudioLevelerPlaybackGainSupported() && !empty($opt['playbackGain']);
+    // Where FPP has Normalize, it always does the leveling.
+    $on = AudioLevelerPlaybackGainSupported();
     return array(
         'enabled' => $on,
         'supported' => AudioLevelerPlaybackGainSupported(),
@@ -365,6 +368,49 @@ function AudioLevelerCheckVideos()
     return json(array('status' => 'OK', 'running' => true));
 }
 
+// True if FPP (GStreamer) plays this MP3's encoder lead-in, about 25 ms,
+// because ffmpeg labelled its gapless tag "Lavc"/"Lavf" instead of "LAME"
+// (GStreamer only reads a LAME one). Reads just the start of the file.
+// Mirrors plays_late_on_fpp() in bin/mp3lossless.py.
+function AudioLevelerMp3PlaysLate($path)
+{
+    $fh = @fopen($path, 'rb');
+    if (!$fh) {
+        return false;
+    }
+    $head = fread($fh, 10);
+    $pos = 0;
+    if (strlen($head) === 10 && substr($head, 0, 3) === 'ID3') {
+        $size = 0;
+        for ($i = 6; $i < 10; $i++) {
+            $size = ($size << 7) | (ord($head[$i]) & 0x7f);
+        }
+        $pos = 10 + $size + ((ord($head[5]) & 0x10) ? 10 : 0);
+    }
+    fseek($fh, $pos);
+    $d = fread($fh, 400);
+    fclose($fh);
+    if (strlen($d) < 200) {
+        return false;
+    }
+    $h = unpack('N', substr($d, 0, 4))[1];
+    if ((($h >> 21) & 0x7ff) !== 0x7ff || (($h >> 17) & 3) !== 1) {
+        return false; // not an MPEG layer III frame
+    }
+    $mpeg1 = (($h >> 19) & 3) === 3;
+    $mono = (($h >> 6) & 3) === 3;
+    $side = $mpeg1 ? ($mono ? 17 : 32) : ($mono ? 9 : 17);
+    $x = 4 + $side;
+    $id = substr($d, $x, 4);
+    if ($id !== 'Info' && $id !== 'Xing') {
+        return false;
+    }
+    $flags = unpack('N', substr($d, $x + 4, 4))[1];
+    $tag = $x + 8 + (($flags & 1) ? 4 : 0) + (($flags & 2) ? 4 : 0) + (($flags & 4) ? 100 : 0) + (($flags & 8) ? 4 : 0);
+    $label = substr($d, $tag, 4);
+    return $label === 'Lavc' || $label === 'Lavf';
+}
+
 // GET /api/plugin/AudioLeveler/files
 function AudioLevelerFiles()
 {
@@ -398,6 +444,10 @@ function AudioLevelerFiles()
         $size = filesize($path);
         $mtime = filemtime($path);
         $row = array('name' => $name, 'size' => $size, 'mtime' => $mtime);
+        // An MP3 whose gapless tag FPP can't read plays 25 ms late.
+        if (strtolower(substr($name, -4)) === '.mp3') {
+            $row['lateTag'] = AudioLevelerMp3PlaysLate($path);
+        }
         if (strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0) {
             // Videos without sound have nothing to level: left off the list,
             // as are ones not checked yet (they appear as the check gets to them).
@@ -422,6 +472,7 @@ function AudioLevelerFiles()
             $row['spk'] = isset($a['spk']) ? $a['spk'] : null;
             $row['hasSpk'] = array_key_exists('spk', $a);
             $row['measured'] = true;
+
             if (!empty($a['noAudio'])) {
                 $row['noAudio'] = true;
             }
@@ -536,6 +587,7 @@ function AudioLevelerLevel()
         'lossless' => (bool) $opt['lossless'],
         'bgOffset' => max(3, min(30, floatval($opt['bgOffset']))),
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
+        'allowLimiter' => AudioLevelerPlaybackGainSupported() && !empty($opt['allowLimiter']),
         'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
     ));
 }
@@ -549,6 +601,23 @@ function AudioLevelerRestore()
         'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
         'scope' => AudioLevelerScope($body),
         'waitIdle' => (bool) $opt['waitIdle'],
+        'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
+        'allowLimiter' => AudioLevelerPlaybackGainSupported() && !empty($opt['allowLimiter']),
+        'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
+    ));
+}
+
+// POST /api/plugin/AudioLeveler/retime
+// Put MP3s that play 25 ms late on FPP back in step (relabels their gapless tag).
+function AudioLevelerRetime()
+{
+    $body = AudioLevelerBody();
+    $opt = AudioLevelerOptions();
+    return AudioLevelerStart('retime', array(
+        'files' => AudioLevelerCleanFiles(isset($body['files']) ? $body['files'] : 'all'),
+        'scope' => 'songs',
+        'waitIdle' => (bool) $opt['waitIdle'],
+        'backup' => (bool) $opt['backup'],
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
         'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
     ));
@@ -631,6 +700,7 @@ function AudioLevelerWriteAutoSettings()
         'backup' => (bool) $opt['backup'],
         'since' => intval(ReadSettingFromFile('AudioLeveler_autoSince', AUDIOLEVELER_PLUGIN)),
         'playbackGain' => AudioLevelerPlaybackGainRequest($opt),
+        'allowLimiter' => AudioLevelerPlaybackGainSupported() && !empty($opt['allowLimiter']),
         'match' => $opt['match'] === 'lufs' ? 'lufs' : 'speakers',
         'music' => AudioLevelerMusicDir(),
         'videos' => AudioLevelerVideoDir(),

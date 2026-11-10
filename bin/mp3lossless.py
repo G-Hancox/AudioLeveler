@@ -252,6 +252,41 @@ def _crc16(data):
     return crc
 
 
+def _lame_tag(data):
+    """(tag offset, frame end) of the first frame's LAME-style tag; RuntimeError if none."""
+    pos = _id3v2_size(data)
+    hdr = _parse_header(data, pos)
+    if hdr is None or hdr.get("free"):
+        raise RuntimeError("no MP3 frame where the gapless tag should be")
+    x = pos + 4 + _layout(hdr)[0]
+    if bytes(data[x:x + 4]) not in (b"Info", b"Xing"):
+        raise RuntimeError("the MP3 has no gapless (Info) frame")
+    flags = int.from_bytes(data[x + 4:x + 8], "big")
+    tag = x + 8 + (4 if flags & 1 else 0) + (4 if flags & 2 else 0) + \
+        (100 if flags & 4 else 0) + (4 if flags & 8 else 0)
+    frame_end = pos + hdr["length"]
+    if tag + 24 > frame_end:
+        raise RuntimeError("the MP3's gapless tag is cut short")
+    return pos, tag, frame_end
+
+
+def plays_late_on_fpp(path):
+    """
+    True if FPP (GStreamer) will play this MP3's encoder lead-in, about 25 ms,
+    because its gapless tag is labelled by ffmpeg ("Lavc"/"Lavf") rather than
+    "LAME". MP3s without the tag, or with a LAME one, play on time.
+    """
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+            f.seek(0)
+            data = f.read(_id3v2_size(head) + 4096)
+        pos, tag, _ = _lame_tag(data)
+    except (OSError, RuntimeError):
+        return False
+    return bytes(data[tag:tag + 4]) in (b"Lavc", b"Lavf")
+
+
 def label_lame_tag(path):
     """
     Make a freshly encoded MP3's gapless information readable by GStreamer,
@@ -271,20 +306,7 @@ def label_lame_tag(path):
     """
     with open(path, "rb") as f:
         data = bytearray(f.read())
-    pos = _id3v2_size(data)
-    hdr = _parse_header(data, pos)
-    if hdr is None or hdr.get("free"):
-        raise RuntimeError("no MP3 frame where the gapless tag should be")
-    side = _layout(hdr)[0]
-    x = pos + 4 + side
-    if bytes(data[x:x + 4]) not in (b"Info", b"Xing"):
-        raise RuntimeError("the MP3 has no gapless (Info) frame")
-    flags = int.from_bytes(data[x + 4:x + 8], "big")
-    tag = x + 8 + (4 if flags & 1 else 0) + (4 if flags & 2 else 0) + \
-        (100 if flags & 4 else 0) + (4 if flags & 8 else 0)
-    frame_end = pos + hdr["length"]
-    if tag + 24 > frame_end:
-        raise RuntimeError("the MP3's gapless tag is cut short")
+    pos, tag, frame_end = _lame_tag(data)
     label = bytes(data[tag:tag + 4])
     if label == b"LAME":
         return False

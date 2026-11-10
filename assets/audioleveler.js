@@ -95,6 +95,9 @@
     var VOLUME_CLOSE_DB = 1.0, PEAK_TOLERANCE_DB = 0.1;
     var WIDE_DYNAMICS_LU = 15, LONG_TRACK_SECONDS = 900;
 
+    // Names that suggest a track is meant to sit under the show.
+    var AMBIANCE_NAME = /ambien|ambiance|background|off.?hours|intermission|\bloop\b|\bbgm\b|soundscape/i;
+
     function recommendMode(I, TP, target, ceiling) {
         var gain = target - I;
         var over = (TP === null || TP === undefined) ? null : TP + gain - ceiling;
@@ -134,7 +137,8 @@
         var I = f.lufs, TP = (f.peak === null || f.peak === undefined) ? null : f.peak;
         // On an FPP with playback gain, volume-only fixes go there: exact and
         // lossless for every format, no lossless-step rounding.
-        var playback = pgSupported && options.playbackGain !== false && (!f.video || pgVideos);
+        // Where FPP has Normalize it does the leveling (files never change).
+        var playback = pgSupported && (!f.video || pgVideos);
         var mp3Lossless = !playback && /\.mp3$/i.test(f.name) && options.lossless !== false;
         var note = [];
         if (f.lra !== null && f.lra !== undefined && f.lra > WIDE_DYNAMICS_LU && mode !== 'compress') {
@@ -157,6 +161,20 @@
         if (rec) {
             mode = recommendMode(I, TP, target, ceiling);
             if (mode === 'none') { return { text: 'Fine as is', note: note.join(' · '), rec: true }; }
+            // Normalize never rewrites a file: unless the limiter is allowed, a
+            // song whose peaks hold it back lands a little short (the worker
+            // does the same).
+            if (mode === 'limit' && playback && !options.allowLimiter) {
+                mode = 'volume';
+                var shortBy = TP === null ? 0 : TP + (target - I) - ceiling;
+                note.unshift('Its peaks hold it ' + shortBy.toFixed(1) + ' dB short. Pick Limiter in Fix to bring it all the way up (rewrites the file)');
+            }
+        }
+        if (AMBIANCE_NAME.test(f.name) && choice !== 'background' && choice !== 'skip') {
+            note.push('Sounds like ambiance: Background keeps it under the show');
+        }
+        if (f.lateTag) {
+            note.push('Plays 25 ms late on FPP: use Fix MP3 timing');
         }
         var gain = target - I;
         // Same rule as the worker: an MP3 changed losslessly lands to within
@@ -174,7 +192,7 @@
                 text = dB(gain) + (mp3Lossless ? ' · lossless' : ' · re-encode');
                 // (The worker treats a limiter fix that needs no limiting as a
                 // plain volume change, so it's a playback gain where available.)
-                if (playback) { text = dB(gain) + ' · playback gain'; }
+                if (playback) { text = dB(gain) + ' · FPP Normalize'; }
             } else {
                 text = dB(gain) + ' · limiter trims ' + trim.toFixed(1) + ' dB · re-encode';
             }
@@ -196,7 +214,7 @@
             if (lossless && Math.abs(gain) < 0.01) {
                 text = 'Fine as is';
             } else {
-                text = dB(gain) + (playback ? ' · playback gain' : lossless ? ' · lossless' : ' · re-encode');
+                text = dB(gain) + (playback ? ' · FPP Normalize' : lossless ? ' · lossless' : ' · re-encode');
             }
             var lands = I + gain;
             if (lands < target - 0.8) {
@@ -250,7 +268,7 @@
         return 'text-danger';
     }
 
-    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new uploads' };
+    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', auto: 'Auto-leveling new uploads' };
 
     function statusHtml(f) {
         var clip = f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0
@@ -270,7 +288,7 @@
         if (f.leveled) {
             var l = f.leveled;
             return '<span class="badge text-bg-success">Leveled</span> <span class="small text-body-secondary">' +
-                esc((Math.round(l.target * 10) / 10) + ' LUFS, ' + (l.method === 'playback' ? 'playback gain ' + dB(f.pbGain || l.gain)
+                esc((Math.round(l.target * 10) / 10) + ' LUFS, ' + (l.method === 'playback' ? 'FPP Normalize ' + dB(f.pbGain || l.gain)
                     : l.method === 'lossless' ? 'lossless'
                     : l.method === 'original' ? 'original kept'
                     : (MODE_NAMES[l.mode] || l.mode) + ', re-encoded')) + '</span>';
@@ -326,7 +344,7 @@
         // While a job runs these totals are a mix of old and new numbers, so
         // grey them out and say so, rather than let them look final.
         var stale = busy();
-        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new uploads' }[jobProgress.cmd] || 'Working';
+        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', auto: 'Auto-leveling new uploads' }[jobProgress.cmd] || 'Working';
         el.innerHTML =
             (stale ? '<div class="col-12 small text-body-secondary">' +
                 '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
@@ -431,7 +449,8 @@
             show.forEach(function (f) {
                 var r = raw(f);
                 var rec = recommendMode(r.I, r.TP, t + speakerDelta(f), ceiling);
-                if (rec === 'limit') { lim++; }
+                // With FPP's Normalize and no limiter allowed, those land a little quieter.
+                if (rec === 'limit') { if (pgSupported && !options.allowLimiter) { held++; } else { lim++; } }
                 else if (rec === 'volume' && r.TP !== null && r.TP + (t + speakerDelta(f) - r.I) - ceiling > VOLUME_CLOSE_DB) { held++; }
                 else { vol++; }
             });
@@ -508,6 +527,11 @@
     function updateButtons() {
         var sel = selectedNames();
         var b = busy();
+        // MP3s whose gapless tag FPP can't read play 25 ms late: offer the fix.
+        var late = tab === 'songs' ? files.filter(function (f) { return f.lateTag; }) : [];
+        $id('alLateNote').classList.toggle('d-none', !late.length);
+        $id('alLateCount').textContent = late.length + ' song' + (late.length === 1 ? '' : 's');
+        $id('alRetime').disabled = b;
         $id('alMeasure').disabled = b || !files.length;
         $id('alLevelAll').disabled = b || !files.length;
         $id('alLevelSel').disabled = b || !sel.length;
@@ -634,7 +658,7 @@
 
     /* ---------------- jobs ---------------- */
 
-    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', auto: 'Auto-leveling new uploads' };
+    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', auto: 'Auto-leveling new uploads' };
 
     function showJob(j) {
         var state = j.state || null;
@@ -691,12 +715,12 @@
         var res = j.results || [];
         var names = res.map(function (r) { return r.file; });
         var bad = res.filter(function (r) { return !r.ok; });
-        var verb = { analyze: 'Measured', level: 'Leveled', restore: 'Restored', auto: 'Auto-leveled' }[j.cmd] || 'Finished';
+        var verb = { analyze: 'Measured', level: 'Leveled', restore: 'Restored', retime: 'Fixed the timing of', auto: 'Auto-leveled' }[j.cmd] || 'Finished';
         var head;
         var cls = 'alert-success';
         if (j.state === 'cancelled') {
             var doneN = res.length, total = j.total || 0;
-            var again = { analyze: 'Measure ' + jobNoun(names, 2), level: 'Level all (or Level selected)', restore: 'Restore originals' }[j.cmd] || 'it';
+            var again = { analyze: 'Measure ' + jobNoun(names, 2), level: 'Level all (or Level selected)', restore: 'Restore originals', retime: 'Fix MP3 timing' }[j.cmd] || 'it';
             head = 'Stopped after ' + doneN + (total ? ' of ' + total : '') + ' ' + jobNoun(names, doneN) + '. ' +
                 (doneN ? 'The ' + (doneN === 1 ? 'one' : doneN) + ' finished ' + (doneN === 1 ? 'is' : 'are') + ' saved' : 'Nothing was changed') +
                 (j.stoppedAt ? '; ' + shortName(j.stoppedAt) + ' was left as it was' : '') + '.' +
@@ -847,6 +871,10 @@
         });
         $id('alLevelAll').addEventListener('click', function () {
             start('level', { files: 'all', scope: tab });
+        });
+        $id('alRetime').addEventListener('click', function () {
+            var names = files.filter(function (f) { return f.lateTag; }).map(function (f) { return f.name; });
+            if (names.length) { start('retime', { files: names }); }
         });
         $id('alRestoreSel').addEventListener('click', function () {
             var names = files.filter(function (f) { return selected[f.name] && f.canRestore; }).map(function (f) { return f.name; });
