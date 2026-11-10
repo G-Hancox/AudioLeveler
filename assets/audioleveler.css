@@ -83,7 +83,7 @@
     padding-right: 0.3rem;
 }
 
-/* Simple / Advanced settings view (Simple hides the .al-adv parts). */
+/* Basic / Advanced settings view (Basic hides the .al-adv parts). */
 #audioLeveler.al-simple .al-adv,
 #audioLeveler:not(.al-simple) .al-simple-only {
     display: none !important;

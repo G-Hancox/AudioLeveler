@@ -39,10 +39,10 @@ function AudioLevelerPrintSetting($name)
             <div class="card h-100">
                 <div class="card-header d-flex align-items-center gap-2">
                     <span class="fw-semibold me-auto">Leveling settings</span>
-                    <!-- Simple shows the few settings most shows need; Advanced shows all
+                    <!-- Basic shows the few settings most shows need; Advanced shows all
                          of them. Remembered per browser, like Air Defender's Lite/Detailed. -->
                     <div class="btn-group btn-group-sm" role="group" aria-label="Settings view">
-                        <button type="button" class="btn btn-outline-secondary" data-al-view="simple" aria-pressed="true">Simple</button>
+                        <button type="button" class="btn btn-outline-secondary" data-al-view="simple" aria-pressed="true">Basic</button>
                         <button type="button" class="btn btn-outline-secondary" data-al-view="advanced" aria-pressed="false">Advanced</button>
                     </div>
                 </div>

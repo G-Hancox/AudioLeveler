@@ -777,7 +777,7 @@
 
     /* ---------------- wiring ---------------- */
 
-    // Simple shows the few settings most shows need; Advanced shows all.
+    // Basic shows the few settings most shows need; Advanced shows all (FPP's UI level names).
     function setView(view, save) {
         var simple = view !== 'advanced';
         $id('audioLeveler').classList.toggle('al-simple', simple);
@@ -802,7 +802,7 @@
         $id('alAdvisorRows').addEventListener('click', function (e) {
             var b = e.target.closest('.al-use-target');
             if (!b) { return; }
-            // Pick it in FPP's Target level setting, which saves it the FPP way.
+            // Pick it in the Loudness setting, which saves it the FPP way.
             var sel = $id('AudioLeveler_target');
             if (!sel) { return; }
             sel.value = b.getAttribute('data-t');

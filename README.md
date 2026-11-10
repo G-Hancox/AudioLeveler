@@ -25,13 +25,13 @@ After measuring, a **Fix** column shows what leveling will do to each song (for 
 
 ## Settings
 
-The settings are FPP's own setting rows (hover the **?** beside each for help), saved the moment they change. **Simple** (the default view) shows just Target level, Level new uploads automatically and Wait until no show is playing; **Advanced** shows everything below plus the target advisor. The defaults suit most shows, including FM. The choice of view is remembered per browser.
+The settings are FPP's own setting rows (hover the **?** beside each for help), saved the moment they change. **Basic** (the default view) shows just Loudness, Level new uploads automatically and Wait until no show is playing; **Advanced** shows everything below plus the target advisor. The defaults suit most shows, including FM. The choice of view is remembered per browser.
 
 | Setting | Default | What it does |
 |---|---|---|
-| **Target level** | -14 LUFS | The loudness every song is brought to. FPP's volume sets how loud the show plays overall. |
+| **Loudness** | -14 LUFS | The loudness every song is brought to. FPP's volume sets how loud the show plays overall. |
 | **Peak ceiling** | -1.5 dBTP | The loudest peak allowed, so nothing clips or distorts over FM. |
-| **Match songs by** | FM radios and outdoor speakers | Speaker matching (below), or plain LUFS. |
+| **Match songs by** | Show speakers / FM | Speaker matching (below), or plain LUFS. |
 | **Background level** | 10 dB under | How far under the show Background songs sit. |
 | **Use the limiter for songs Normalize leaves short** | Off | FPP 10.4+ only. Normalize never turns a song up past where its peaks would distort; with this on, those songs get the limiter instead (rewrites the file, original backed up). You can also pick Limiter for one song in its Fix column. |
 | **Lossless volume change for MP3s** | On | FPP 10.0–10.3 only (no Normalize): MP3Gain-style change when a song only needs turning up or down. |
@@ -39,9 +39,9 @@ The settings are FPP's own setting rows (hover the **?** beside each for help), 
 | **Keep originals so they can be restored** | On | Backups for one-click restore. |
 | **Wait until no show is playing** | On | When off, work runs at low priority during the show, but a song is never replaced while it's playing. |
 
-## Matching for FM radios and outdoor speakers
+## Matching for show speakers / FM
 
-Most shows play over FM, to car and porch radios, or through outdoor speakers, and those barely reproduce deep bass, so a bass-heavy song can read on target in LUFS yet sound quieter to your audience. With **Match songs by: How they sound on FM radios and outdoor speakers** (the default), the Measure step also takes each song's *speaker level*: the median short-term loudness with everything under 120 Hz removed (two 120 Hz high-pass stages), skipping the first 3 s and near-silence. That's measured in the same decode pass. Each song's target then moves by `clamp(LUFS − speaker level − 3, −4, +4)` dB, and everything else uses that target: the recommendation, the limiter, Background, and "Fine as is". This is the same method as FPP's Normalize, and in testing its gains matched FPP's to 0.1 dB. Choose **Plain loudness (LUFS)** to turn it off.
+Most shows play over FM, to car and porch radios, or through outdoor speakers, and those barely reproduce deep bass, so a bass-heavy song can read on target in LUFS yet sound quieter to your audience. With **Match songs by: How they sound on show speakers / FM** (the default), the Measure step also takes each song's *speaker level*: the median short-term loudness with everything under 120 Hz removed (two 120 Hz high-pass stages), skipping the first 3 s and near-silence. That's measured in the same decode pass. Each song's target then moves by `clamp(LUFS − speaker level − 3, −4, +4)` dB, and everything else uses that target: the recommendation, the limiter, Background, and "Fine as is". This is the same method as FPP's Normalize, and in testing its gains matched FPP's to 0.1 dB. Choose **Standard loudness (LUFS)** to turn it off.
 
 ## How it works with FPP's Normalize (FPP 10.4+)
 
