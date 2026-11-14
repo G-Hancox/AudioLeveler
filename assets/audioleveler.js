@@ -544,6 +544,7 @@
             : 'No ' + noun(2) + ' selected. Tick ' + noun(2) + ' to level or restore just those.';
         $id('alClearSel').classList.toggle('d-none', !sel.length);
         $id('alMeasure').textContent = sel.length ? 'Measure selected' : 'Measure ' + noun(2);
+        if (!scanning) { $id('alScan').textContent = 'Scan for ' + noun(2); }
         var all = $id('alSelectAll');
         var shownSel = shown.filter(function (f) { return selected[f.name]; }).length;
         all.checked = shown.length > 0 && shownSel === shown.length;
@@ -795,6 +796,7 @@
        saved in one go by the worker. File names are never changed. */
 
     var info = { files: [], edits: {}, filter: 'all', search: '', loaded: false };
+    var scanning = false;
 
     // Bits that don't belong in a song's info: "(Official Video)", "[Lyrics]", a website...
     var TAG_JUNK = /\s*[\(\[\{]\s*(?:official\s*(?:music\s*|lyrics?\s*|hd\s*)?(?:video|audio|visuali[sz]er)?|lyrics?(?:\s*video)?|audio(?:\s*only)?|visuali[sz]er|hq|hd|4k|explicit|free\s*download|out\s*now|(?:no\s*)?copyright(?:\s*free)?|full\s*song)\s*[\)\]\}]/ig;
@@ -1157,6 +1159,25 @@
                 toast('Deleted ' + j.deleted + ' backup(s).');
                 loadFiles();
             }).catch(function (e) { toast(e.message, false); });
+        });
+
+        // Scan for songs / videos: pick up files uploaded since the page opened.
+        $id('alScan').addEventListener('click', function () {
+            var b = this, which = tab, before = allFiles.filter(inTab).length;
+            scanning = true;
+            b.disabled = true;
+            b.textContent = 'Scanning\u2026';
+            Promise.all([loadFiles(), loadTags()]).then(function () {
+                var n = allFiles.filter(inTab).length, added = n - before;
+                if (tab === which) {
+                    toast('Found ' + n + ' ' + noun(n) + (added > 0 ? ' (' + added + ' new)' : '') + '.' +
+                        (which === 'videos' && added > 0 ? ' New videos appear as they\'re checked for sound.' : ''));
+                }
+            }).catch(function (e) { toast(e.message, false); }).then(function () {
+                scanning = false;
+                b.disabled = false;
+                updateButtons();
+            });
         });
 
         api('GET', 'options').then(function (j) { showOptions(j.options); })

@@ -128,7 +128,7 @@
 
             <h6 class="fw-semibold">Song info (Title and Artist)</h6>
             <p>The <b>Song info</b> tab shows each song's Title and Artist: what FPP shows while it plays, and what an FM transmitter plugin sends to car
-               radios as RDS. <b>Scan for songs</b> picks up songs uploaded since the page opened, <b>Fill blanks from file names</b> fills in missing info from names like <i>Artist - Title.mp3</i>, the <b>&#8644;</b> button
+               radios as RDS. <b>Scan for songs</b> (also on the Songs and Videos tabs, as Scan for songs / Scan for videos) picks up files uploaded since the page opened, <b>Fill blanks from file names</b> fills in missing info from names like <i>Artist - Title.mp3</i>, the <b>&#8644;</b> button
                swaps Title and Artist for files named the other way round, and <b>Clean up junk</b> removes things like (Official Video), [Lyrics] and
                websites. Nothing is written until you press <b>Save</b>. Only the info inside the MP3 changes: never the file name, so sequences and playlists
                still find it, and the sound, timing and FPP's Normalize setting stay as they were. MP3s only. Uploading the song again brings back your

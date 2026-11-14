@@ -94,7 +94,7 @@ The videos in FPP's videos folder get their own **Videos** tab beside **Songs** 
 
 The **Song info** tab lists every song's Title and Artist: what FPP shows while a song plays, and what an FM transmitter plugin sends to car radios as RDS text (Kulp's K-FMT plugin, for one, sends exactly these). The tab's badge counts songs worth a look: no title, no artist, a title that's just a track number, or junk like `(Official Video)`, `[Lyrics]` or a website.
 
-- **Scan for songs** looks in the music folder again, so songs uploaded while the page is open show up (unsaved changes are kept).
+- **Scan for songs** looks in the music folder again, so songs uploaded while the page is open show up (unsaved changes are kept). The Songs and Videos tabs have the same button (**Scan for songs** / **Scan for videos**) beside Measure.
 - **Fill blanks from file names** fills in missing titles and artists from file names like `Artist - Title.mp3` (track numbers and a trailing ` (1)` are dropped). Some files are named the other way round, so each row has a **⇄** button to swap Title and Artist.
 - **Clean up junk** strips the usual junk from every title and artist.
 - You can type straight into any row. Changes are highlighted and nothing is written until you press **Save**.

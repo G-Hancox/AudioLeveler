@@ -147,6 +147,7 @@ function AudioLevelerPrintSetting($name)
                         </li>
                     </ul>
                     <div class="d-flex gap-2 mb-1 al-list-only">
+                        <button id="alScan" type="button" class="buttons btn btn-outline-primary" title="Looks in the folder again, for files uploaded since this page opened">Scan for songs</button>
                         <button id="alMeasure" type="button" class="buttons btn btn-outline-secondary">Measure songs</button>
                         <button id="alLevelAll" type="button" class="buttons btn btn-success">Level all</button>
                     </div>
