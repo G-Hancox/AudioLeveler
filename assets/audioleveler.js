@@ -845,7 +845,8 @@
                 if (!f || !f.editable) { delete info.edits[n]; } else { setInfoEdit(f, info.edits[n].title, info.edits[n].artist); }
             });
             renderInfo();
-        }).catch(function (e) { toast(e.message, false); });
+            return true;
+        }).catch(function (e) { toast(e.message, false); return false; });
     }
 
     function renderInfoBadge() {
@@ -868,6 +869,7 @@
                 '<div class="alert alert-secondary small py-2 mb-3">Uploading a song again (from xLights, say) brings back the info in your ' +
                 'computer\'s copy. To keep a fix, also make it on your computer, or check this tab after uploading.</div>' +
                 '<div class="d-flex flex-wrap gap-2 align-items-center mb-2">' +
+                '<button id="alInfoScan" type="button" class="buttons btn btn-sm btn-outline-primary" title="Looks in the music folder again, for songs uploaded since this page opened. Unsaved changes are kept.">Scan for songs</button>' +
                 '<button id="alInfoFill" type="button" class="buttons btn btn-sm btn-outline-secondary" title="Fills in blank titles and artists from file names like Artist - Title.mp3">Fill blanks from file names</button>' +
                 '<button id="alInfoClean" type="button" class="buttons btn btn-sm btn-outline-secondary" title="Removes (Official Video), [Lyrics], websites and similar">Clean up junk</button>' +
                 '<span class="me-auto"></span>' +
@@ -987,6 +989,19 @@
         });
         $id('alInfoClean').addEventListener('click', function () {
             bulk(function (t) { return { title: cleanTag(t.title) || t.title, artist: cleanTag(t.artist) || t.artist }; }, 'Cleaned up');
+        });
+        $id('alInfoScan').addEventListener('click', function () {
+            var b = this, before = info.files.length;
+            b.disabled = true;
+            b.textContent = 'Scanning\u2026';
+            loadTags().then(function (ok) {
+                if (!ok) { return; }
+                var n = info.files.length, added = n - before;
+                toast('Found ' + n + ' song' + (n === 1 ? '' : 's') + (added > 0 ? ' (' + added + ' new)' : '') + '.');
+            }).then(function () {
+                b.disabled = false;
+                b.textContent = 'Scan for songs';
+            });
         });
         $id('alInfoUndo').addEventListener('click', function () { info.edits = {}; renderInfo(); });
         $id('alInfoSave').addEventListener('click', function () {
