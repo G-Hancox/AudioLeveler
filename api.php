@@ -806,6 +806,46 @@ function AudioLevelerSyncsafe($b)
     return ((ord($b[0]) & 0x7f) << 21) | ((ord($b[1]) & 0x7f) << 14) | ((ord($b[2]) & 0x7f) << 7) | (ord($b[3]) & 0x7f);
 }
 
+// FPP's PHP has no mbstring, so text is converted by hand.
+function AudioLevelerUtf8Char($c)
+{
+    if ($c < 0x80) {
+        return chr($c);
+    }
+    if ($c < 0x800) {
+        return chr(0xC0 | ($c >> 6)) . chr(0x80 | ($c & 0x3F));
+    }
+    if ($c < 0x10000) {
+        return chr(0xE0 | ($c >> 12)) . chr(0x80 | (($c >> 6) & 0x3F)) . chr(0x80 | ($c & 0x3F));
+    }
+    return chr(0xF0 | ($c >> 18)) . chr(0x80 | (($c >> 12) & 0x3F)) . chr(0x80 | (($c >> 6) & 0x3F)) . chr(0x80 | ($c & 0x3F));
+}
+
+function AudioLevelerLatin1ToUtf8($s)
+{
+    return preg_replace_callback('/[\x80-\xff]/', function ($m) {
+        return AudioLevelerUtf8Char(ord($m[0]));
+    }, $s);
+}
+
+function AudioLevelerUtf16ToUtf8($s, $bigEndian)
+{
+    $out = '';
+    $n = strlen($s) - (strlen($s) % 2);
+    for ($i = 0; $i < $n; $i += 2) {
+        $u = $bigEndian ? (ord($s[$i]) << 8) | ord($s[$i + 1]) : ord($s[$i]) | (ord($s[$i + 1]) << 8);
+        if ($u >= 0xD800 && $u <= 0xDBFF && $i + 3 < $n) {
+            $l = $bigEndian ? (ord($s[$i + 2]) << 8) | ord($s[$i + 3]) : ord($s[$i + 2]) | (ord($s[$i + 3]) << 8);
+            if ($l >= 0xDC00 && $l <= 0xDFFF) {
+                $u = 0x10000 + (($u - 0xD800) << 10) + ($l - 0xDC00);
+                $i += 2;
+            }
+        }
+        $out .= ($u >= 0xD800 && $u <= 0xDFFF) ? "\xEF\xBF\xBD" : AudioLevelerUtf8Char($u);
+    }
+    return $out;
+}
+
 function AudioLevelerTagText($data)
 {
     if ($data === '' || $data === false) {
@@ -814,15 +854,15 @@ function AudioLevelerTagText($data)
     $enc = ord($data[0]);
     $raw = substr($data, 1);
     if ($enc === 0) {
-        $s = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
+        $s = AudioLevelerLatin1ToUtf8($raw);
     } elseif ($enc === 1) {
         $b = substr($raw, 0, 2);
-        $s = $b === "\xfe\xff" ? mb_convert_encoding(substr($raw, 2), 'UTF-8', 'UTF-16BE')
-            : mb_convert_encoding($b === "\xff\xfe" ? substr($raw, 2) : $raw, 'UTF-8', 'UTF-16LE');
+        $s = $b === "\xfe\xff" ? AudioLevelerUtf16ToUtf8(substr($raw, 2), true)
+            : AudioLevelerUtf16ToUtf8($b === "\xff\xfe" ? substr($raw, 2) : $raw, false);
     } elseif ($enc === 2) {
-        $s = mb_convert_encoding($raw, 'UTF-8', 'UTF-16BE');
+        $s = AudioLevelerUtf16ToUtf8($raw, true);
     } elseif ($enc === 3) {
-        $s = mb_convert_encoding($raw, 'UTF-8', 'UTF-8');
+        $s = preg_match('//u', $raw) ? $raw : AudioLevelerLatin1ToUtf8($raw);
     } else {
         return '';
     }
@@ -895,7 +935,7 @@ function AudioLevelerReadTags($path)
         if (substr($t, 0, 3) === 'TAG') {
             $clean = function ($b) {
                 $b = explode("\0", $b)[0];
-                return trim(mb_convert_encoding($b, 'UTF-8', 'ISO-8859-1'));
+                return trim(AudioLevelerLatin1ToUtf8($b));
             };
             if ($out['title'] === '') {
                 $out['title'] = $clean(substr($t, 3, 30));
@@ -947,7 +987,7 @@ function AudioLevelerSetTags()
         }
         $one = function ($k) use ($e) {
             $v = isset($e[$k]) && is_string($e[$k]) ? trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $e[$k])) : '';
-            return mb_substr($v, 0, 250);
+            return preg_match('/^.{0,250}/us', $v, $m) ? $m[0] : '';
         };
         $clean[$name] = array('title' => $one('title'), 'artist' => $one('artist'));
     }
