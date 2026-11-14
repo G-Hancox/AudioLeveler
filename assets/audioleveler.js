@@ -268,7 +268,7 @@
         return 'text-danger';
     }
 
-    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', auto: 'Auto-leveling new uploads' };
+    var WORKING_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', tags: 'Saving song info for', auto: 'Auto-leveling new uploads' };
 
     function statusHtml(f) {
         var clip = f.measured && f.peak !== null && f.peak !== undefined && f.peak > 0
@@ -344,7 +344,7 @@
         // While a job runs these totals are a mix of old and new numbers, so
         // grey them out and say so, rather than let them look final.
         var stale = busy();
-        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', auto: 'Auto-leveling new uploads' }[jobProgress.cmd] || 'Working';
+        var verb = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', tags: 'Saving song info for', auto: 'Auto-leveling new uploads' }[jobProgress.cmd] || 'Working';
         el.innerHTML =
             (stale ? '<div class="col-12 small text-body-secondary">' +
                 '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span>' +
@@ -579,8 +579,12 @@
     // start fresh: each tab is its own list.
     function setTab(name, quiet) {
         tab = name;
-        try { localStorage.setItem('audioLeveler.tab', name); } catch (e) { /* no storage */ }
-        [['songs', 'alTabSongs'], ['videos', 'alTabVideos']].forEach(function (t) {
+        if (name !== 'info') {
+            try { localStorage.setItem('audioLeveler.tab', name); } catch (e) { /* no storage */ }
+        }
+        $id('audioLeveler').classList.toggle('al-tab-info', name === 'info');
+        if (name === 'info') { renderInfo(); loadTags(); }
+        [['songs', 'alTabSongs'], ['videos', 'alTabVideos'], ['info', 'alTabInfo']].forEach(function (t) {
             var on = t[0] === name;
             $id(t[1]).classList.toggle('active', on);
             $id(t[1]).setAttribute('aria-selected', on ? 'true' : 'false');
@@ -662,7 +666,7 @@
 
     /* ---------------- jobs ---------------- */
 
-    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', auto: 'Auto-leveling new uploads' };
+    var CMD_NAMES = { analyze: 'Measuring', level: 'Leveling', restore: 'Restoring', retime: 'Fixing MP3 timing', tags: 'Saving song info for', auto: 'Auto-leveling new uploads' };
 
     function showJob(j) {
         var state = j.state || null;
@@ -709,9 +713,15 @@
             if (wasBusy) {
                 showResult(j);
                 loadFiles();
+                if (j.cmd === 'tags') {
+                    // Saved ones now match the files; anything that failed stays to try again.
+                    (j.results || []).forEach(function (r) { if (r.ok) { delete info.edits[r.file]; } });
+                    loadTags();
+                }
             }
         }
         updateButtons();
+        renderInfoButtons();
         schedulePoll();
     }
 
@@ -719,12 +729,12 @@
         var res = j.results || [];
         var names = res.map(function (r) { return r.file; });
         var bad = res.filter(function (r) { return !r.ok; });
-        var verb = { analyze: 'Measured', level: 'Leveled', restore: 'Restored', retime: 'Fixed the timing of', auto: 'Auto-leveled' }[j.cmd] || 'Finished';
+        var verb = { analyze: 'Measured', level: 'Leveled', restore: 'Restored', retime: 'Fixed the timing of', tags: 'Updated the info of', auto: 'Auto-leveled' }[j.cmd] || 'Finished';
         var head;
         var cls = 'alert-success';
         if (j.state === 'cancelled') {
             var doneN = res.length, total = j.total || 0;
-            var again = { analyze: 'Measure ' + jobNoun(names, 2), level: 'Level all (or Level selected)', restore: 'Restore originals', retime: 'Fix MP3 timing' }[j.cmd] || 'it';
+            var again = { analyze: 'Measure ' + jobNoun(names, 2), level: 'Level all (or Level selected)', restore: 'Restore originals', retime: 'Fix MP3 timing', tags: 'Save' }[j.cmd] || 'it';
             head = 'Stopped after ' + doneN + (total ? ' of ' + total : '') + ' ' + jobNoun(names, doneN) + '. ' +
                 (doneN ? 'The ' + (doneN === 1 ? 'one' : doneN) + ' finished ' + (doneN === 1 ? 'is' : 'are') + ' saved' : 'Nothing was changed') +
                 (j.stoppedAt ? '; ' + shortName(j.stoppedAt) + ' was left as it was' : '') + '.' +
@@ -777,6 +787,217 @@
             updateButtons();
             toast(e.message, false);
         });
+    }
+
+    /* ---------------- Song info tab (Title and Artist) ----------------
+       What FPP shows while a song plays, and what an FM transmitter plugin
+       can send as RDS text. Changes are collected here, checked by eye, then
+       saved in one go by the worker. File names are never changed. */
+
+    var info = { files: [], edits: {}, filter: 'all', search: '', loaded: false };
+
+    // Bits that don't belong in a song's info: "(Official Video)", "[Lyrics]", a website...
+    var TAG_JUNK = /\s*[\(\[\{]\s*(?:official\s*(?:music\s*|lyrics?\s*|hd\s*)?(?:video|audio|visuali[sz]er)?|lyrics?(?:\s*video)?|audio(?:\s*only)?|visuali[sz]er|hq|hd|4k|explicit|free\s*download|out\s*now|(?:no\s*)?copyright(?:\s*free)?|full\s*song)\s*[\)\]\}]/ig;
+    var TAG_SITE = /\s*(?:[-|~]\s*)?[\(\[]?\s*(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+\.(?:com|net|org|cc|me|io|ru|info|biz|fm|to|mx|co\.uk)\b\/?\s*[\)\]]?/ig;
+    var TAG_TRACKNO = /^\s*(?:track\s*\d{1,3}\b\s*[-._:)]?\s*|\d{1,3}\s*[-._)]\s+)/i;
+
+    function cleanTag(s) {
+        s = String(s || '');
+        if (s.indexOf(' ') < 0 && s.indexOf('_') >= 0) { s = s.replace(/_+/g, ' '); }
+        s = s.replace(TAG_JUNK, '').replace(TAG_SITE, '');
+        return s.replace(/\s+/g, ' ').replace(/^[\s\-_|~.]+|[\s\-_|~]+$/g, '');
+    }
+
+    // "01 - Bobby Helms - Jingle Bell Rock.mp3" -> artist and title.
+    function tagsFromName(name) {
+        // " (1)" is a second download of the same file, not part of the name.
+        var base = String(name).replace(/\.[^.]+$/, '').replace(/\s*\(\d{1,2}\)$/, '').replace(TAG_TRACKNO, '');
+        if (base.indexOf(' ') < 0) { base = base.replace(/_+/g, ' '); }
+        var i = base.indexOf(' - ');
+        return i > 0 ? { artist: cleanTag(base.slice(0, i)), title: cleanTag(base.slice(i + 3)) }
+            : { artist: '', title: cleanTag(base) };
+    }
+
+    function infoNow(f) { return info.edits[f.name] || { title: f.title, artist: f.artist }; }
+
+    function infoProblems(t) {
+        var p = [];
+        if (!t.title) { p.push('No title'); } else if (/^(?:track\s*)?\d{1,3}$/i.test(t.title)) { p.push('Title is just a number'); }
+        if (!t.artist) { p.push(t.title.indexOf(' - ') > 0 ? 'Artist is in the title?' : 'No artist'); }
+        if ((t.title && cleanTag(t.title) !== t.title) || (t.artist && cleanTag(t.artist) !== t.artist)) { p.push('Has junk to clean up'); }
+        return p;
+    }
+
+    function infoChanges() { return Object.keys(info.edits).length; }
+
+    function setInfoEdit(f, title, artist) {
+        if (title === f.title && artist === f.artist) { delete info.edits[f.name]; } else { info.edits[f.name] = { title: title, artist: artist }; }
+    }
+
+    function loadTags() {
+        return api('GET', 'tags').then(function (j) {
+            info.files = j.files || [];
+            info.loaded = true;
+            var have = {};
+            info.files.forEach(function (f) { have[f.name] = f; });
+            Object.keys(info.edits).forEach(function (n) {
+                var f = have[n];
+                if (!f || !f.editable) { delete info.edits[n]; } else { setInfoEdit(f, info.edits[n].title, info.edits[n].artist); }
+            });
+            renderInfo();
+        }).catch(function (e) { toast(e.message, false); });
+    }
+
+    function renderInfoBadge() {
+        var n = info.files.filter(function (f) { return f.editable && infoProblems({ title: f.title, artist: f.artist }).length; }).length;
+        var b = $id('alInfoBadge');
+        b.textContent = n;
+        b.classList.toggle('d-none', !n);
+        b.title = n + ' song' + (n === 1 ? '' : 's') + ' to look at';
+    }
+
+    function renderInfo() {
+        renderInfoBadge();
+        var el = $id('alInfoPanel');
+        if (tab !== 'info') { return; }
+        if (!el.firstChild) {
+            el.innerHTML =
+                '<p class="small text-body-secondary mb-2">Title and Artist are what FPP shows while a song plays, and what an FM transmitter ' +
+                'plugin can send to car radios (RDS). Only the info inside each MP3 changes: never the file name, so sequences and playlists ' +
+                'still find it, and the sound and timing stay exactly the same. Look the changes over, then <b>Save</b>.</p>' +
+                '<div class="alert alert-secondary small py-2 mb-3">Uploading a song again (from xLights, say) brings back the info in your ' +
+                'computer\'s copy. To keep a fix, also make it on your computer, or check this tab after uploading.</div>' +
+                '<div class="d-flex flex-wrap gap-2 align-items-center mb-2">' +
+                '<button id="alInfoFill" type="button" class="buttons btn btn-sm btn-outline-secondary" title="Fills in blank titles and artists from file names like Artist - Title.mp3">Fill blanks from file names</button>' +
+                '<button id="alInfoClean" type="button" class="buttons btn btn-sm btn-outline-secondary" title="Removes (Official Video), [Lyrics], websites and similar">Clean up junk</button>' +
+                '<span class="me-auto"></span>' +
+                '<button id="alInfoUndo" type="button" class="btn btn-sm btn-link">Undo changes</button>' +
+                '<button id="alInfoSave" type="button" class="buttons btn btn-sm btn-success">Save</button></div>' +
+                '<div class="d-flex flex-wrap gap-2 align-items-center mb-2">' +
+                '<div id="alInfoFilters" class="d-flex flex-wrap gap-1" role="group" aria-label="Show songs">' +
+                '<button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-info-filter="all">All</button>' +
+                '<button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-info-filter="look">Needs a look</button>' +
+                '<button type="button" class="btn btn-sm btn-outline-secondary rounded-pill" data-info-filter="changed">Changed</button></div>' +
+                '<input id="alInfoSearch" type="search" class="form-control form-control-sm w-auto ms-auto" placeholder="Search" aria-label="Search songs"></div>' +
+                '<div class="row g-2 small fw-semibold border-bottom pb-1 mx-0 d-none d-md-flex"><div class="col-md-4">File</div>' +
+                '<div class="col-md-4">Title</div><div class="col-md-4">Artist</div></div>' +
+                '<div id="alInfoRows" class="al-scroll mb-2"></div>';
+            wireInfo();
+        }
+        Array.prototype.forEach.call(el.querySelectorAll('[data-info-filter]'), function (b) {
+            var on = b.getAttribute('data-info-filter') === info.filter;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        var q = info.search.toLowerCase();
+        var list = info.files.filter(function (f) {
+            var t = infoNow(f);
+            if (info.filter === 'look' && !(f.editable && infoProblems(t).length)) { return false; }
+            if (info.filter === 'changed' && !info.edits[f.name]) { return false; }
+            return !q || (f.name + ' ' + t.title + ' ' + t.artist).toLowerCase().indexOf(q) >= 0;
+        });
+        var tb = $id('alInfoRows');
+        if (!info.loaded) {
+            tb.innerHTML = '<div class="text-body-secondary py-2">Loading&hellip;</div>';
+        } else if (!list.length) {
+            tb.innerHTML = '<div class="text-body-secondary py-3 text-center">' +
+                (info.files.length ? 'No songs match.' : 'No songs in the music folder.') + '</div>';
+        } else {
+            tb.innerHTML = list.map(function (f) {
+                var t = infoNow(f);
+                var note = !f.mp3 ? 'Only MP3s can be changed here'
+                    : f.notMp3 ? 'Not really an MP3 (another format named .mp3), so it\'s left alone'
+                    : !f.editable ? 'Its info is stored in an old format: change it on your computer'
+                    : infoProblems(t).join(' · ');
+                var input = function (k, label) {
+                    return '<input type="text" class="form-control form-control-sm al-tag" data-k="' + k + '" data-n="' + esc(f.name) + '"' +
+                        ' value="' + esc(t[k]) + '" placeholder="' + label + '" aria-label="' + label + ' of ' + esc(f.name) + '"' + (f.editable ? '' : ' disabled') + '>';
+                };
+                return '<div class="row g-2 mx-0 py-2 border-bottom align-items-center al-info-row' + (info.edits[f.name] ? ' al-changed' : '') + '">' +
+                    '<div class="col-12 col-md-4 text-break small">' + esc(f.name) +
+                    (note ? '<div class="text-' + (f.editable ? 'warning-emphasis' : 'body-secondary') + '">' + esc(note) + '</div>' : '') + '</div>' +
+                    '<div class="col-6 col-md-4">' + input('title', 'Title') + '</div>' +
+                    '<div class="col-6 col-md-4 d-flex gap-1">' + input('artist', 'Artist') +
+                    (f.editable ? '<button type="button" class="btn btn-sm btn-outline-secondary al-swap" data-n="' + esc(f.name) + '" title="Swap Title and Artist" aria-label="Swap Title and Artist of ' + esc(f.name) + '">&#8644;</button>' : '') +
+                    '</div></div>';
+            }).join('');
+        }
+        renderInfoButtons();
+    }
+
+    function renderInfoButtons() {
+        if (!$id('alInfoSave')) { return; }
+        var n = infoChanges();
+        $id('alInfoSave').textContent = n ? 'Save ' + n + ' change' + (n === 1 ? '' : 's') : 'Save';
+        $id('alInfoSave').disabled = !n || busy();
+        $id('alInfoUndo').classList.toggle('d-none', !n);
+        $id('alInfoFill').disabled = busy();
+        $id('alInfoClean').disabled = busy();
+    }
+
+    function wireInfo() {
+        var byName = function (n) { return info.files.filter(function (f) { return f.name === n; })[0]; };
+        $id('alInfoRows').addEventListener('input', function (e) {
+            if (!e.target.classList.contains('al-tag')) { return; }
+            var f = byName(e.target.getAttribute('data-n'));
+            if (!f) { return; }
+            var t = infoNow(f);
+            var v = { title: t.title, artist: t.artist };
+            v[e.target.getAttribute('data-k')] = e.target.value.trim();
+            setInfoEdit(f, v.title, v.artist);
+            e.target.closest('.al-info-row').classList.toggle('al-changed', !!info.edits[f.name]);
+            renderInfoButtons();
+        });
+        $id('alInfoRows').addEventListener('click', function (e) {
+            var b = e.target.closest('.al-swap');
+            var f = b && byName(b.getAttribute('data-n'));
+            if (!f) { return; }
+            var t = infoNow(f);
+            setInfoEdit(f, t.artist, t.title);
+            renderInfo();
+        });
+        // Re-check a row's notes once the edit is done, not on every key.
+        $id('alInfoRows').addEventListener('change', function (e) { if (e.target.classList.contains('al-tag')) { renderInfo(); renderInfoBadge(); } });
+        var bulk = function (fn, what) {
+            var n = 0;
+            info.files.forEach(function (f) {
+                if (!f.editable) { return; }
+                var t = infoNow(f);
+                var v = fn(t, f);
+                if (v.title !== t.title || v.artist !== t.artist) { setInfoEdit(f, v.title, v.artist); n++; }
+            });
+            if (n) { info.filter = 'changed'; }
+            renderInfo();
+            toast(n ? what + ' ' + n + ' song' + (n === 1 ? '' : 's') + '. Look them over, then Save.' : 'Nothing to change.');
+        };
+        $id('alInfoFill').addEventListener('click', function () {
+            bulk(function (t, f) {
+                var g = tagsFromName(f.name);
+                var title = t.title, artist = t.artist;
+                // "Artist - Title" typed into the title: split it.
+                if (!artist && title.indexOf(' - ') > 0) {
+                    var i = title.indexOf(' - ');
+                    artist = cleanTag(title.slice(0, i));
+                    title = cleanTag(title.slice(i + 3));
+                }
+                if (!title || /^(?:track\s*)?\d{1,3}$/i.test(title)) { title = g.title; }
+                if (!artist) { artist = g.artist; }
+                return { title: title, artist: artist };
+            }, 'Filled in');
+        });
+        $id('alInfoClean').addEventListener('click', function () {
+            bulk(function (t) { return { title: cleanTag(t.title) || t.title, artist: cleanTag(t.artist) || t.artist }; }, 'Cleaned up');
+        });
+        $id('alInfoUndo').addEventListener('click', function () { info.edits = {}; renderInfo(); });
+        $id('alInfoSave').addEventListener('click', function () {
+            if (!infoChanges()) { return; }
+            start('tags', { edits: info.edits });
+        });
+        $id('alInfoFilters').addEventListener('click', function (e) {
+            var b = e.target.closest('[data-info-filter]');
+            if (b) { info.filter = b.getAttribute('data-info-filter'); renderInfo(); }
+        });
+        $id('alInfoSearch').addEventListener('input', function () { info.search = this.value; renderInfo(); });
     }
 
     /* ---------------- wiring ---------------- */
@@ -927,7 +1148,8 @@
             .catch(function () { showOptions({ target: -14, ceiling: -1.5, backup: true, waitIdle: true, lossless: true, bgOffset: 10, match: 'speakers' }); })
             .then(loadFiles)
             .then(poll)
-            .then(autoCheck);
+            .then(autoCheck)
+            .then(loadTags);
     }
 
     if (document.readyState === 'loading') {

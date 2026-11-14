@@ -88,3 +88,8 @@
 #audioLeveler:not(.al-simple) .al-simple-only {
     display: none !important;
 }
+
+/* Song info tab: its own panel; the leveling list and buttons hide meanwhile */
+#audioLeveler:not(.al-tab-info) .al-info-only, #audioLeveler.al-tab-info .al-list-only {display:none !important}
+#alInfoPanel .al-tag {min-width: 0}
+#alInfoPanel .al-info-row.al-changed {background-color: var(--bs-warning-bg-subtle)}

@@ -141,8 +141,12 @@ function AudioLevelerPrintSetting($name)
                             <button id="alTabVideos" type="button" class="nav-link" role="tab" aria-selected="false" data-tab="videos">
                                 Videos <span class="badge rounded-pill text-bg-secondary fw-normal">0</span></button>
                         </li>
+                        <li class="nav-item" role="presentation">
+                            <button id="alTabInfo" type="button" class="nav-link" role="tab" aria-selected="false" data-tab="info">
+                                Song info <span id="alInfoBadge" class="badge rounded-pill text-bg-warning fw-normal d-none">0</span></button>
+                        </li>
                     </ul>
-                    <div class="d-flex gap-2 mb-1">
+                    <div class="d-flex gap-2 mb-1 al-list-only">
                         <button id="alMeasure" type="button" class="buttons btn btn-outline-secondary">Measure songs</button>
                         <button id="alLevelAll" type="button" class="buttons btn btn-success">Level all</button>
                     </div>
@@ -160,6 +164,9 @@ function AudioLevelerPrintSetting($name)
                     </div>
                     <div id="alResult" class="d-none mb-3"></div>
 
+                    <div id="alInfoPanel" class="al-info-only"></div>
+
+                    <div class="al-list-only">
                     <p class="small text-body-secondary mb-3">
                         Leveling is slow on a Pi, often a minute or more per song, so a whole library can take a few hours.
                         It's fine to leave it running overnight; it waits for shows. Uploading a song again (including from xLights)
@@ -229,6 +236,7 @@ function AudioLevelerPrintSetting($name)
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         <span id="alBackupInfo" class="small text-body-secondary me-auto"></span>
                         <button id="alDeleteBackups" type="button" class="buttons btn btn-outline-danger btn-sm" disabled>Delete all backups</button>
+                    </div>
                     </div>
                 </div>
             </div>

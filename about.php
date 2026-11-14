@@ -126,6 +126,14 @@
                When the page finds any, a <b>Fix MP3 timing</b> button appears on the Songs tab: it relabels just that tag. The audio, file size and date stay the same.
                Songs Audio Leveler rewrites are always labelled correctly.</p>
 
+            <h6 class="fw-semibold">Song info (Title and Artist)</h6>
+            <p>The <b>Song info</b> tab shows each song's Title and Artist: what FPP shows while it plays, and what an FM transmitter plugin sends to car
+               radios as RDS. <b>Fill blanks from file names</b> fills in missing info from names like <i>Artist - Title.mp3</i>, the <b>&#8644;</b> button
+               swaps Title and Artist for files named the other way round, and <b>Clean up junk</b> removes things like (Official Video), [Lyrics] and
+               websites. Nothing is written until you press <b>Save</b>. Only the info inside the MP3 changes: never the file name, so sequences and playlists
+               still find it, and the sound, timing and FPP's Normalize setting stay as they were. MP3s only. Uploading the song again brings back your
+               computer's copy's info, so make the same fix there too.</p>
+
             <h6 class="fw-semibold">Sound quality</h6>
             <p>Each song gets the gentlest treatment that does the job:</p>
             <ul>

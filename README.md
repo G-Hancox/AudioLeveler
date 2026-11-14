@@ -2,7 +2,7 @@
 
 A companion plugin to FPP's built-in Normalize that makes every song in your show play at the same loudness, so nothing whispers and nothing blasts, while ambiance tracks stay under the show.
 
-**On FPP 10.4 and later, Normalize does the leveling,** so your files are never changed, and Audio Leveler adds what Normalize leaves out: it shows each song's loudness, peaks and clipping, says what it did and what might sound better, keeps ambiance and off-hours tracks at a Background level under the show, levels new and re-uploaded songs automatically, offers the limiter for the few songs Normalize leaves short, and fixes MP3s that play 25 ms late on FPP. On FPP 10.0 to 10.3, which have no Normalize, it levels the files itself (losslessly for MP3s whenever it can).
+**On FPP 10.4 and later, Normalize does the leveling,** so your files are never changed, and Audio Leveler adds what Normalize leaves out: it shows each song's loudness, peaks and clipping, says what it did and what might sound better, keeps ambiance and off-hours tracks at a Background level under the show, levels new and re-uploaded songs automatically, offers the limiter for the few songs Normalize leaves short, fixes MP3s that play 25 ms late on FPP, and tidies each song's Title and Artist (what FPP shows while it plays, and what an FM transmitter sends as RDS). On FPP 10.0 to 10.3, which have no Normalize, it levels the files itself (losslessly for MP3s whenever it can).
 
 It measures each song in FPP's music folder (EBU R128 integrated loudness in LUFS, plus true peak), then levels it to a target you choose. Each song gets one of these fixes. Every song starts on **Recommended**, and you can change any song's fix.
 
@@ -90,6 +90,17 @@ The videos in FPP's videos folder get their own **Videos** tab beside **Songs** 
 - Videos are backed up like songs (in `backups/videos/`), and they can be large, so keep an eye on free space.
 - Internally a video is named `videos/<file>`, the same name FPP's own Normalize uses for it.
 
+## Song info (Title and Artist)
+
+The **Song info** tab lists every song's Title and Artist: what FPP shows while a song plays, and what an FM transmitter plugin sends to car radios as RDS text (Kulp's K-FMT plugin, for one, sends exactly these). The tab's badge counts songs worth a look: no title, no artist, a title that's just a track number, or junk like `(Official Video)`, `[Lyrics]` or a website.
+
+- **Fill blanks from file names** fills in missing titles and artists from file names like `Artist - Title.mp3` (track numbers and a trailing ` (1)` are dropped). Some files are named the other way round, so each row has a **⇄** button to swap Title and Artist.
+- **Clean up junk** strips the usual junk from every title and artist.
+- You can type straight into any row. Changes are highlighted and nothing is written until you press **Save**.
+- **Only the info inside the MP3 changes.** The file name never changes, so sequences and playlists keep finding the song. The audio, including the timing header, stays byte-for-byte the same (checked before every file is replaced), and the file's date is kept. When the new info fits in the tag's spare room, which is usual, the file keeps its size, so FPP's Normalize setting and the song's measurements stay valid. When the tag has to grow, both are moved over to the new size. A backed-up original gets the same info, so **Restore** keeps it.
+- MP3s only. Other formats, files using a very old tag format, and files that aren't really MP3s (an M4A renamed `.mp3`, say) are listed but left alone.
+- Uploading a song again (from xLights, say) brings back whatever info your computer's copy has, so make the same fix on your computer to keep it.
+
 ## Automatic leveling
 
 With **Level new uploads automatically** switched on, which is off by default, songs added or changed afterwards are measured and given their fix with no page visit needed. That covers re-uploads from xLights' FPP Connect, which would otherwise undo leveling. The plugin checks:
@@ -127,6 +138,7 @@ Both, on FPP 10.4+: Audio Leveler drives FPP's Normalize (see above) and adds th
 | `bin/leveler.py` | Background worker that runs ffmpeg |
 | `bin/auto_check.sh` | Automatic leveling check: started from the callbacks and the page, returns at once |
 | `bin/mp3lossless.py` | Lossless MP3 volume change (frame `global_gain` edit, as MP3Gain does) |
+| `bin/id3tags.py` | Reads and changes an MP3's Title and Artist (the Song info tab); no extra modules needed |
 | `commands/start_job.sh` | FPP command "Audio Leveler: Start Job": the page asks fppd to run it for a queued job, the video sound check or an automatic-leveling check. Run on its own it does nothing more than that. |
 | `bin/probe_videos.py` | Background check for which videos have a sound track |
 | `settings.json` | The settings, drawn with FPP's `PrintPluginSetting` |

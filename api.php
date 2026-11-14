@@ -11,6 +11,9 @@
  *   POST   level      level songs                 body: {"files": [...]|"all", "target", "ceiling", "mode", "backup", "waitIdle"}
  *   POST   restore    put originals back          body: {"files": [...]|"all"}
  *   POST   retime     MP3s that play 25 ms late on FPP back in step   body: {"files": [...]|"all"}
+ *   GET    tags       each song's Title and Artist (the Song info tab)
+ *   POST   tags       change them                 body: {"edits": {"<song>": {"title", "artist"}}}
+ *   POST   gainsize   the worker grew a song's tag: keep FPP's Normalize setting for it   body: {"file", "oldSize"}
  *   POST   cancel     stop the running job after the current song
  *   GET    options    the saved settings (FPP saves them: settings.json + PrintPluginSetting)
  *   POST   settingschanged   the page saved a setting: refresh what background work uses
@@ -41,6 +44,9 @@ function getEndpointsAudioLeveler()
         array('method' => 'POST', 'endpoint' => 'autocheck', 'callback' => 'AudioLevelerAutoCheck'),
         array('method' => 'GET', 'endpoint' => 'gains', 'callback' => 'AudioLevelerGains'),
         array('method' => 'POST', 'endpoint' => 'checkvideos', 'callback' => 'AudioLevelerCheckVideos'),
+        array('method' => 'GET', 'endpoint' => 'tags', 'callback' => 'AudioLevelerTags'),
+        array('method' => 'POST', 'endpoint' => 'tags', 'callback' => 'AudioLevelerSetTags'),
+        array('method' => 'POST', 'endpoint' => 'gainsize', 'callback' => 'AudioLevelerGainSize'),
     );
 }
 
@@ -788,5 +794,199 @@ function AudioLevelerSetChoice()
     flock($fp, LOCK_UN);
     fclose($fp);
     return json(array('status' => 'OK', 'count' => count($files)));
+}
+
+/* ---------------- Song info (Title and Artist) ----------------
+ * Read here for the Song info tab (a few small reads per song, skipping cover
+ * art); changed by the worker (bin/id3tags.py), which checks every change.
+ */
+
+function AudioLevelerSyncsafe($b)
+{
+    return ((ord($b[0]) & 0x7f) << 21) | ((ord($b[1]) & 0x7f) << 14) | ((ord($b[2]) & 0x7f) << 7) | (ord($b[3]) & 0x7f);
+}
+
+function AudioLevelerTagText($data)
+{
+    if ($data === '' || $data === false) {
+        return '';
+    }
+    $enc = ord($data[0]);
+    $raw = substr($data, 1);
+    if ($enc === 0) {
+        $s = mb_convert_encoding($raw, 'UTF-8', 'ISO-8859-1');
+    } elseif ($enc === 1) {
+        $b = substr($raw, 0, 2);
+        $s = $b === "\xfe\xff" ? mb_convert_encoding(substr($raw, 2), 'UTF-8', 'UTF-16BE')
+            : mb_convert_encoding($b === "\xff\xfe" ? substr($raw, 2) : $raw, 'UTF-8', 'UTF-16LE');
+    } elseif ($enc === 2) {
+        $s = mb_convert_encoding($raw, 'UTF-8', 'UTF-16BE');
+    } elseif ($enc === 3) {
+        $s = mb_convert_encoding($raw, 'UTF-8', 'UTF-8');
+    } else {
+        return '';
+    }
+    $parts = array_values(array_filter(array_map('trim', explode("\0", $s)), 'strlen'));
+    return implode(' / ', $parts);
+}
+
+// Title and Artist the way FPP reads them: the ID3v2 tag first, then ID3v1.
+// 'editable' is false for tags the worker won't rewrite (ID3v2.2, or stored unsynchronised).
+function AudioLevelerReadTags($path)
+{
+    $out = array('title' => '', 'artist' => '', 'editable' => true, 'notMp3' => false);
+    $fh = @fopen($path, 'rb');
+    if (!$fh) {
+        return null;
+    }
+    $h = fread($fh, 10);
+    // MPEG audio must follow the tag: an M4A renamed .mp3 is left alone.
+    $audioAt = (strlen($h) === 10 && substr($h, 0, 3) === 'ID3') ? 10 + AudioLevelerSyncsafe(substr($h, 6, 4)) +
+        ((ord($h[3]) === 4 && (ord($h[5]) & 0x10)) ? 10 : 0) : 0;
+    fseek($fh, $audioAt);
+    $d = ltrim((string) fread($fh, 4096), "\0");
+    if (strlen($d) < 4 || ord($d[0]) !== 0xFF || (ord($d[1]) & 0xE0) !== 0xE0 || ((ord($d[1]) >> 1) & 3) === 0) {
+        $out['editable'] = false;
+        $out['notMp3'] = true;
+    }
+    fseek($fh, 10);
+    if (strlen($h) === 10 && substr($h, 0, 3) === 'ID3' && in_array(ord($h[3]), array(2, 3, 4), true)) {
+        $major = ord($h[3]);
+        $flags = ord($h[5]);
+        $end = 10 + AudioLevelerSyncsafe(substr($h, 6, 4));
+        if ($major === 2 || ($flags & 0x80)) {
+            $out['editable'] = false;
+        }
+        $pos = 10;
+        if (($flags & 0x40) && $major >= 3) {
+            $x = fread($fh, 4);
+            $pos += $major === 4 ? AudioLevelerSyncsafe($x) : 4 + unpack('N', $x)[1];
+        }
+        $want = $major === 2 ? array('TT2' => 'title', 'TP1' => 'artist') : array('TIT2' => 'title', 'TPE1' => 'artist');
+        $hl = $major === 2 ? 6 : 10;
+        $found = 0;
+        while (!($flags & 0x80) && $pos + $hl <= $end && $found < 2) {
+            fseek($fh, $pos);
+            $fr = fread($fh, $hl);
+            if (strlen($fr) < $hl || $fr[0] === "\0") {
+                break;
+            }
+            $id = substr($fr, 0, $hl === 6 ? 3 : 4);
+            if ($major === 2) {
+                $n = (ord($fr[3]) << 16) | (ord($fr[4]) << 8) | ord($fr[5]);
+            } elseif ($major === 4) {
+                $n = AudioLevelerSyncsafe(substr($fr, 4, 4));
+            } else {
+                $n = unpack('N', substr($fr, 4, 4))[1];
+            }
+            if ($n <= 0 || $pos + $hl + $n > $end) {
+                break;
+            }
+            if (isset($want[$id]) && $out[$want[$id]] === '' && $n < 4096 &&
+                !($major === 4 && (ord($fr[9]) & 0x0f))) {
+                $out[$want[$id]] = AudioLevelerTagText(fread($fh, $n));
+                $found++;
+            }
+            $pos += $hl + $n;
+        }
+    }
+    if (fseek($fh, -128, SEEK_END) === 0) {
+        $t = fread($fh, 128);
+        if (substr($t, 0, 3) === 'TAG') {
+            $clean = function ($b) {
+                $b = explode("\0", $b)[0];
+                return trim(mb_convert_encoding($b, 'UTF-8', 'ISO-8859-1'));
+            };
+            if ($out['title'] === '') {
+                $out['title'] = $clean(substr($t, 3, 30));
+            }
+            if ($out['artist'] === '') {
+                $out['artist'] = $clean(substr($t, 33, 30));
+            }
+        }
+    }
+    fclose($fh);
+    return $out;
+}
+
+// GET /api/plugin/AudioLeveler/tags
+function AudioLevelerTags()
+{
+    AudioLevelerNoCache();
+    $music = AudioLevelerMusicDir();
+    $files = array();
+    foreach (is_dir($music) ? scandir($music) : array() as $n) {
+        $path = "$music/$n";
+        if ($n[0] === '.' || !is_file($path) || !AudioLevelerIsAudio($n)) {
+            continue;
+        }
+        $mp3 = strtolower(pathinfo($n, PATHINFO_EXTENSION)) === 'mp3';
+        $t = $mp3 ? AudioLevelerReadTags($path) : null;
+        $files[] = array(
+            'name' => $n,
+            'mp3' => $mp3,
+            'title' => $t ? $t['title'] : '',
+            'artist' => $t ? $t['artist'] : '',
+            'editable' => $mp3 && $t && $t['editable'],
+            'notMp3' => $mp3 && $t && $t['notMp3'],
+        );
+    }
+    return json(array('status' => 'OK', 'files' => $files));
+}
+
+// POST /api/plugin/AudioLeveler/tags
+function AudioLevelerSetTags()
+{
+    $body = AudioLevelerBody();
+    $edits = isset($body['edits']) && is_array($body['edits']) ? $body['edits'] : array();
+    $clean = array();
+    foreach ($edits as $name => $e) {
+        if (!is_string($name) || strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0 || !AudioLevelerIsAudio($name) ||
+            strtolower(pathinfo($name, PATHINFO_EXTENSION)) !== 'mp3' || !is_array($e)) {
+            continue;
+        }
+        $one = function ($k) use ($e) {
+            $v = isset($e[$k]) && is_string($e[$k]) ? trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $e[$k])) : '';
+            return mb_substr($v, 0, 250);
+        };
+        $clean[$name] = array('title' => $one('title'), 'artist' => $one('artist'));
+    }
+    if (!count($clean)) {
+        return AudioLevelerError(400, 'No song info to change.');
+    }
+    return AudioLevelerStart('tags', array('files' => array_keys($clean), 'edits' => $clean, 'scope' => 'songs'));
+}
+
+// POST /api/plugin/AudioLeveler/gainsize
+// Changing a song's info can grow its tag, and FPP only applies a Normalize
+// setting while the file is the size it was measured at. The sound didn't
+// change, so the setting moves to the new size. Only done when the entry still
+// has the old size and the new size is the file's real size.
+function AudioLevelerGainSize()
+{
+    $body = AudioLevelerBody();
+    $name = isset($body['file']) ? $body['file'] : '';
+    $old = isset($body['oldSize']) ? intval($body['oldSize']) : -1;
+    if (!is_string($name) || !AudioLevelerIsAudio($name) || strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0 ||
+        !AudioLevelerPlaybackGainSupported()) {
+        return json(array('status' => 'OK', 'changed' => false));
+    }
+    clearstatcache();
+    $new = @filesize(AudioLevelerMusicDir() . '/' . $name);
+    if ($new === false) {
+        return json(array('status' => 'OK', 'changed' => false));
+    }
+    if (!function_exists('AN_UpdateGains')) {
+        require_once AudioLevelerFppDir() . '/www/common/audioNormalize.inc.php';
+    }
+    $changed = false;
+    AN_UpdateGains(function (&$all) use ($name, $old, $new, &$changed) {
+        if (isset($all[$name]['size']) && intval($all[$name]['size']) === $old) {
+            $all[$name]['size'] = $new;
+            $changed = true;
+        }
+        return $changed;
+    }, false);
+    return json(array('status' => 'OK', 'changed' => $changed));
 }
 ?>

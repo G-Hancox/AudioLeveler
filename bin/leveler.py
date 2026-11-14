@@ -36,6 +36,7 @@ import urllib.request
 # it is found however Python is started (isolated mode drops the script dir).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import mp3lossless  # noqa: E402
+import id3tags  # noqa: E402
 
 PLUGIN = "AudioLeveler"
 
@@ -1213,6 +1214,64 @@ class Worker:
             self.result(name, True, "now in step with its sequence (played 25 ms late on FPP)")
         self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
 
+    def cmd_tags(self):
+        """
+        Change songs' Title and Artist (the Song info tab). Only the tag is
+        rewritten (bin/id3tags.py checks the audio is untouched before it
+        replaces a file), the file name and date stay the same, and a playing
+        song keeps playing: the new file takes its place in one step. When the
+        tag had to grow, what was recorded against the old size (measurements,
+        FPP's Normalize setting) moves to the new size, since the sound is the
+        same. A backed-up original gets the same info, so Restore keeps it.
+        """
+        edits = self.req.get("edits") or {}
+        files = [f for f in self.files_requested() if f in edits and f.lower().endswith(".mp3") and not is_video(f)]
+        self.save_job(total=len(files))
+        for i, name in enumerate(files):
+            if self.cancelled():
+                break
+            self.save_job(current=name, done=i)
+            e = edits.get(name) or {}
+            title, artist = str(e.get("title") or ""), str(e.get("artist") or "")
+            path = self.path_of(name)
+            try:
+                old = file_sig(path)
+                now_tags = id3tags.read_tags(path)
+                if now_tags["title"] == title.strip() and now_tags["artist"] == artist.strip():
+                    self.result(name, True, "already had this info")
+                    continue
+                r = id3tags.write_tags(path, title, artist, os.path.join(self.tmpdir, "tagging.mp3"))
+            except (OSError, id3tags.TagError) as ex:
+                self.result(name, False, "left as it was: %s" % ex)
+                continue
+            if r["resized"]:
+                new = file_sig(path)
+                for store, spath in ((self.analysis, self.analysis_path), (self.leveled, self.leveled_path)):
+                    rec = store.get(name)
+                    if isinstance(rec, dict) and same_sig(rec, old):
+                        rec.update(new)
+                        write_json(spath, store)
+                self.move_gain(name, old["size"])
+            bpath = self.backup_path(name)
+            if os.path.exists(bpath):
+                try:
+                    id3tags.write_tags(bpath, title, artist, os.path.join(self.tmpdir, "tagging.mp3"))
+                except (OSError, id3tags.TagError) as ex:
+                    logging.warning("%s: couldn't update the backed-up original's info: %s", name, ex)
+            self.result(name, True, "info updated")
+        self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
+
+    def move_gain(self, name, old_size):
+        """Keep FPP's Normalize setting for a song whose tag grew (see api.php gainsize)."""
+        body = json.dumps({"file": name, "oldSize": old_size}).encode("utf-8")
+        req = urllib.request.Request("http://127.0.0.1/api/plugin/AudioLeveler/gainsize", data=body,
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                r.read()
+        except Exception as ex:
+            logging.warning("%s: couldn't carry its Normalize setting over to the new size: %s", name, ex)
+
     def cmd_restore(self):
         files = [f for f in self.files_requested_or_backups()]
         self.save_job(total=len(files))
@@ -1301,7 +1360,7 @@ def main():
         sys.argv = [sys.argv[0]] + argv
 
     ap = argparse.ArgumentParser(description="FPP Audio Leveler worker")
-    ap.add_argument("command", choices=("analyze", "level", "restore", "retime", "auto"))
+    ap.add_argument("command", choices=("analyze", "level", "restore", "retime", "tags", "auto"))
     ap.add_argument("--music", help="FPP music folder (auto: taken from auto.json)")
     ap.add_argument("--videos", help="FPP videos folder; videos are left out without it")
     ap.add_argument("--data", required=True, help="plugindata folder for this plugin")
