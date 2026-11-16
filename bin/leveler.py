@@ -29,6 +29,8 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 import urllib.request
 
@@ -188,14 +190,48 @@ class NoAudio(Exception):
 # Set by the worker: a file whose appearance means "cancel now".
 CANCEL_FILE = None
 
+# Set by the worker: told (0..1) how far the ffmpeg pass that is running has
+# got through its file, so a long file's progress bar moves while it works.
+PROGRESS = None
 
-def run(cmd, timeout=None):
+
+def _progress_seconds(path):
+    """How far into the file ffmpeg is, from the file its -progress option writes."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, os.path.getsize(path) - 1024))
+            tail = f.read().decode("ascii", "replace")
+    except OSError:
+        return None
+    vals = re.findall(r"out_time_(?:us|ms)=(\d+)", tail)  # both are microseconds
+    return int(vals[-1]) / 1e6 if vals else None
+
+
+def run(cmd, timeout=None, dur=None):
     """
     Run a command and collect its output, but stop it within half a second if
     the user cancels: a song can take minutes, and Cancel should not have to
     wait for it. Stopping is always safe: measuring only reads, and leveling
     writes to a temporary file that is only swapped in after it's checked.
+    With dur (the file's length in seconds), an ffmpeg run reports how far it
+    has got to PROGRESS as it goes.
     """
+    pfile = None
+    if dur and PROGRESS and cmd and cmd[0] == "ffmpeg":
+        fd, pfile = tempfile.mkstemp(prefix="audioleveler-progress-", suffix=".txt")
+        os.close(fd)
+        cmd = [cmd[0], "-progress", pfile] + list(cmd[1:])
+    try:
+        return _run(cmd, timeout, pfile, dur)
+    finally:
+        if pfile:
+            try:
+                os.remove(pfile)
+            except OSError:
+                pass
+
+
+def _run(cmd, timeout, pfile, dur):
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                          universal_newlines=True)
     started = time.time()
@@ -207,6 +243,13 @@ def run(cmd, timeout=None):
             err_parts.append(err or "")
             break
         except subprocess.TimeoutExpired:
+            if pfile:
+                t = _progress_seconds(pfile)
+                if t is not None:
+                    try:
+                        PROGRESS(t / dur)
+                    except Exception:  # progress is only a nicety
+                        pass
             if (CANCEL_FILE and os.path.exists(CANCEL_FILE)) or (
                     timeout is not None and time.time() - started > timeout):
                 p.kill()
@@ -237,7 +280,16 @@ def probe(path):
         "ch": int(s.get("channels") or 2),
         "fmt": s.get("sample_fmt", ""),
         "br": int(int(br) / 1000) if str(br).isdigit() else 0,
+        "dur": _float(fmt.get("duration")),
     }
+
+
+def _float(v):
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return v if v > 0 and not math.isinf(v) and not math.isnan(v) else 0.0
 
 
 _TIME_RE = re.compile(r"time=(\d+):(\d+):(\d+(?:\.\d+)?)")
@@ -294,7 +346,7 @@ def spk_note(delta):
 _FRAMELOG_OK = True
 
 
-def measure(path, prefilter=None, speakers=False):
+def measure(path, prefilter=None, speakers=False, dur=None):
     """
     EBU R128 integrated loudness + true peak via ffmpeg's loudnorm analyser,
     and, with speakers=True, the speaker level from the same decode pass.
@@ -308,13 +360,13 @@ def measure(path, prefilter=None, speakers=False):
         graph = ("[0:a:0]asplit=2[m][s];[m]%s[mo];[s]%s,%s,"
                  "ametadata=mode=print:key=lavfi.r128.S:file=-,anullsink" % (af, SPEAKER_HIGHPASS, eb))
         r = run(["ffmpeg", "-hide_banner", "-nostdin", "-stats", "-i", path, "-vn",
-                 "-filter_complex", graph, "-map", "[mo]", "-f", "null", "-"])
+                 "-filter_complex", graph, "-map", "[mo]", "-f", "null", "-"], dur=dur)
         if r.returncode != 0 and _FRAMELOG_OK and "framelog" in (r.stderr or ""):
             _FRAMELOG_OK = False
-            return measure(path, prefilter, speakers)
+            return measure(path, prefilter, speakers, dur)
     else:
         r = run(["ffmpeg", "-hide_banner", "-nostdin", "-stats", "-i", path, "-vn",
-                 "-map", "0:a:0", "-af", af, "-f", "null", "-"])
+                 "-map", "0:a:0", "-af", af, "-f", "null", "-"], dur=dur)
     if r.returncode != 0:
         raise RuntimeError("ffmpeg could not decode this file")
     err = r.stderr
@@ -468,8 +520,11 @@ class Worker:
         self.leveled_path = os.path.join(self.data, "leveled.json")
         self.job_path = os.path.join(self.data, "job.json")
         self.cancel_path = os.path.join(self.data, "cancel")
-        global CANCEL_FILE
+        global CANCEL_FILE, PROGRESS
         CANCEL_FILE = self.cancel_path
+        PROGRESS = self.report_part
+        self._span = (0.0, 1.0)
+        self._part_saved = 0.0
         self.analysis = read_json(self.analysis_path, {})
         self.leveled = read_json(self.leveled_path, {})
         self.job = read_json(self.job_path, {})
@@ -479,9 +534,28 @@ class Worker:
     # -- job status shown on the page ------------------------------------
 
     def save_job(self, **kw):
+        if ("done" in kw or "current" in kw) and "part" not in kw:
+            # A new file (or one finished): its own progress starts again.
+            kw["part"] = 0
+            self._span = (0.0, 1.0)
         self.job.update(kw)
         self.job["updated"] = now()
         write_json(self.job_path, self.job)
+
+    def step(self, lo, hi):
+        """The share (lo..hi) of the current file's progress bar the next pass fills."""
+        self._span = (lo, hi)
+
+    def report_part(self, frac):
+        """How far through the current file this job is: written at most once a second."""
+        lo, hi = self._span
+        p = round(lo + max(0.0, min(1.0, frac)) * (hi - lo), 3)
+        if p <= (self.job.get("part") or 0):
+            return  # never backwards
+        self.job["part"] = p
+        if time.time() - self._part_saved >= 1.0:
+            self._part_saved = time.time()
+            self.save_job(part=p)
 
     def result(self, name, ok, msg):
         self.job.setdefault("results", []).append({"file": name, "ok": ok, "msg": msg})
@@ -669,6 +743,27 @@ class Worker:
             raise RuntimeError("FPP's Normalize is busy with another run")
         return text
 
+    def with_estimate(self, fn, expect_secs):
+        """Run fn(), moving the progress bar by elapsed time against expect_secs meanwhile."""
+        if not expect_secs:
+            return fn()
+        box = {}
+
+        def work():
+            try:
+                box["value"] = fn()
+            except BaseException as ex:  # handed back to the caller below
+                box["error"] = ex
+        t = threading.Thread(target=work, daemon=True)
+        started = time.time()
+        t.start()
+        while t.is_alive():
+            t.join(0.5)
+            self.report_part(min(0.95, (time.time() - started) / expect_secs))
+        if "error" in box:
+            raise box["error"]
+        return box.get("value")
+
     def set_gain(self, name, target, ceiling):
         """Have FPP's Normalize measure the song and set its gain for this target. Returns the gain."""
         text = self.normalize(name, "normalize", target, ceiling)
@@ -720,11 +815,16 @@ class Worker:
             self.analysis[name] = entry
             write_json(self.analysis_path, self.analysis)
             return entry
-        m = measure(path, speakers=self.speakers())
+        self.step(0.0, 1.0)
+        started = time.time()
+        m = measure(path, speakers=self.speakers(), dur=info.get("dur"))
         entry = dict(sig)
         entry.update(info)
         entry.update(m)
         entry["measured"] = now()
+        # How long measuring took on this FPP: the progress estimate while
+        # FPP's Normalize measures it (it gives no progress of its own).
+        entry["measureSecs"] = round(time.time() - started, 1)
         self.analysis[name] = entry
         write_json(self.analysis_path, self.analysis)
         return entry
@@ -793,7 +893,9 @@ class Worker:
         # Reuse the Measure step's numbers when they belong to this exact
         # file, so songs that are already fine are passed over instantly.
         saved = self.saved_measurement(name, src, from_backup)
-        base = saved or measure(src, speakers=self.speakers())
+        dur = info.get("dur")
+        self.step(0.0, 0.4)
+        base = saved or measure(src, speakers=self.speakers(), dur=dur)
         if base["I"] is None:
             return False, "skipped: song is silent or too short to measure"
         # Matching by speakers moves this song's own target (bass-heavy songs
@@ -810,7 +912,7 @@ class Worker:
             if mode == "limit" and self.playback_gain_on() and not self.req.get("allowLimiter"):
                 mode = "volume"
         pre = COMPRESSOR if mode == "compress" else None
-        m = measure(src, pre) if pre else base
+        m = measure(src, pre, dur=dur) if pre else base
         before = base["I"]
         if m["I"] is None:
             return False, "skipped: song is silent or too short to measure"
@@ -845,8 +947,14 @@ class Worker:
             if from_backup:
                 shutil.copy2(src, path + ".restoring")
                 os.replace(path + ".restoring", path)
+            # FPP's Normalize measures the song again and says nothing until
+            # it's done: move the bar on an estimate (its pass takes about 40%
+            # as long as Measure's did here), never past 95%.
+            took = (self.analysis.get(name) or {}).get("measureSecs") or (saved or {}).get("measureSecs")
+            self.step(0.0 if saved else 0.4, 1.0)
             try:
-                gain = self.set_gain(name, target - delta, ceiling)
+                gain = self.with_estimate(lambda: self.set_gain(name, target - delta, ceiling),
+                                          0.4 * took if took else None)
                 pb_error = None
             except NoAudio:
                 return True, "no sound track, nothing to level"
@@ -862,6 +970,8 @@ class Worker:
                 entry.update(probe(path))
                 entry.update(m)
                 entry["measured"] = now()
+                if took:
+                    entry["measureSecs"] = took
                 self.analysis[name] = entry
                 write_json(self.analysis_path, self.analysis)
                 after = m["I"] + gain
@@ -894,7 +1004,8 @@ class Worker:
                         mp3lossless.label_lame_tag(tmp)
                     except RuntimeError:
                         pass
-                    out = measure(tmp, speakers=self.speakers())
+                    self.step(0.4, 1.0)
+                    out = measure(tmp, speakers=self.speakers(), dur=dur)
                     if out["TP"] is not None and out["TP"] > ceiling + 0.3:
                         raise mp3lossless.NotLossless("peaks came out above the ceiling")
                     method, gain, limit = ("lossless" if steps else "original"), steps * mp3lossless.STEP_DB, False
@@ -930,7 +1041,8 @@ class Worker:
                     cmd = ["ffmpeg", "-hide_banner", "-nostdin", "-y", "-i", src, "-vn",
                            "-map", "0:a:0", "-map_metadata", "0", "-af", af,
                            "-ar", str(info["sr"]), "-ac", str(info["ch"])] + codec_args(ext, info) + [tmp]
-                r = run(cmd)
+                self.step(0.4, 0.8)
+                r = run(cmd, dur=dur)
                 if r.returncode != 0 or not os.path.exists(tmp) or os.path.getsize(tmp) == 0:
                     tail = (r.stderr or "").strip().splitlines()[-1:] or ["unknown error"]
                     if os.path.exists(tmp):
@@ -945,7 +1057,8 @@ class Worker:
                         os.remove(tmp)
                         return False, "kept the original: couldn't keep the new MP3 in sync (%s)" % ex
                 # Check the new file before it goes anywhere near the show.
-                out = measure(tmp, speakers=self.speakers())
+                self.step(0.8, 1.0)
+                out = measure(tmp, speakers=self.speakers(), dur=dur)
                 miss = None if out["I"] is None else expected - out["I"]
                 # The encoder or limiter can shift loudness a little; one corrective
                 # pass brings it back on target. Volume-only mode can't go up past

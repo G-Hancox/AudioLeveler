@@ -678,14 +678,17 @@
             box.classList.remove('d-none');
             $id('alResult').classList.add('d-none');
             var total = j.total || 0, done = j.done || 0;
+            // How far into the file being worked on (a long mix takes minutes).
+            var part = state === 'running' && done < total ? Math.max(0, Math.min(1, +j.part || 0)) : 0;
             jobProgress = { cmd: j.cmd || jobProgress.cmd, done: done, total: total };
             renderStats();
-            var pct = total ? Math.round(100 * done / total) : 0;
+            var pct = total ? Math.round(100 * (done + part) / total) : 0;
             $id('alJobBar').style.width = pct + '%';
             var verb = CMD_NAMES[j.cmd] || 'Working';
             var txt = state === 'starting' ? 'Starting…'
                 : verb + ' ' + (total ? (Math.min(done + 1, total)) + ' of ' + total : '') +
-                  (j.current ? ': ' + shortName(j.current) : '');
+                  (j.current ? ': ' + shortName(j.current) : '') +
+                  (part >= 0.01 ? ' (' + Math.round(part * 100) + '%)' : '');
             $id('alJobText').textContent = txt;
             $id('alJobMsg').textContent = j.message || '';
             $id('alJobBar').classList.toggle('bg-warning', state === 'waiting');
