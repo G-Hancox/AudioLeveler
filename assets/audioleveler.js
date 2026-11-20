@@ -537,7 +537,14 @@
         $id('alLevelSel').disabled = b || !sel.length;
         var selWithBackup = files.filter(function (f) { return selected[f.name] && f.canRestore; }).length;
         $id('alRestoreSel').disabled = b || !selWithBackup;
-        $id('alSetFix').disabled = !sel.length;
+        // Show the selected songs' fix: one name when they all share it,
+        // "Mixed fixes" when they don't.
+        var sf = $id('alSetFix'), have = {};
+        files.forEach(function (f) { if (selected[f.name]) { have[f.choice || 'default'] = true; } });
+        var common = Object.keys(have);
+        sf.disabled = !sel.length;
+        sf.options[0].textContent = common.length > 1 ? 'Mixed fixes' : 'Set fix\u2026';
+        if (document.activeElement !== sf || !sel.length) { sf.value = common.length === 1 ? common[0] : ''; }
         $id('alSelText').textContent = sel.length
             ? sel.length + ' ' + noun(sel.length) + ' selected' +
               (selWithBackup ? ' · ' + selWithBackup + ' with an original to restore' : '')
@@ -1069,10 +1076,10 @@
                 if (song) { setChoice([song.name], e.target.value); }
             }
         });
+        $id('alSetFix').addEventListener('blur', function () { updateButtons(); });
         $id('alSetFix').addEventListener('change', function () {
             var v = this.value;
-            this.value = '';
-            if (!v) { return; }
+            if (!v) { updateButtons(); return; }
             // Background and Skip are deliberate per-song decisions: a bulk
             // change leaves them alone, unless only such songs are selected
             // (then they're clearly what you mean to change).
