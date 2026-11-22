@@ -86,7 +86,7 @@
         },
         "AudioLeveler_lossless": {
             "description": "Lossless volume change for MP3s",
-            "tip": "Like MP3Gain: changes an MP3's volume in 1.5 dB steps without re-encoding, so there's no quality loss at all. Used whenever a song only needs turning up or down. Songs that need the limiter or compression, and other formats, are re-encoded at top quality (MP3 at 320 kbps).",
+            "tip": "Like MP3Gain: changes an MP3's volume in steps of about 1.5 dB (1.505 dB) without re-encoding, so there's no quality loss at all. Used whenever a song only needs turning up or down. Songs that need the limiter or compression, and other formats, are re-encoded at top quality (MP3 at 320 kbps).",
             "type": "checkbox",
             "default": "1",
             "labelClass": "col-10",

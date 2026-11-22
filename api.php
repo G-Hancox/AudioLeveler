@@ -22,7 +22,7 @@
  * The heavy lifting is done by bin/leveler.py, started in the background at
  * low priority so a web request never waits on ffmpeg. fppd starts it, through
  * the plugin's "Audio Leveler: Start Job" command, so a job never runs under
- * the web server; only when fppd can't be asked is it started from here.
+ * the web server; when fppd isn't running, the page says so and nothing starts.
  */
 
 define('AUDIOLEVELER_START_COMMAND', 'Audio Leveler: Start Job');

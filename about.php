@@ -69,7 +69,7 @@
 
             <h6 class="fw-semibold">Your sequences stay in sync</h6>
             <p>Songs keep their file names, so sequences and playlists still find them. Each leveled song is checked against the original,
-               and if its length differs by more than 0.15 seconds, it isn't used and the original is kept.</p>
+               and when both lengths can be read and they differ by more than 0.15 seconds, it isn't used and the original is kept.</p>
 
             <h6 class="fw-semibold">Safe during a show</h6>
             <p>All work runs in the background at the lowest priority, started by FPPD, so FPPD needs to be running. (That's what the <b>Audio Leveler: Start Job</b> command in FPP's command lists is for; you don't need to use it yourself.) By default it waits until no show is playing. Even with that turned off,
@@ -89,7 +89,7 @@
                it waits for shows and you can close the browser. Speed doesn't affect quality.</p>
 
             <h6 class="fw-semibold">Videos</h6>
-            <p>Videos have their own <b>Videos</b> tab next to <b>Songs</b>. Each tab is its own list, with its own numbers and selection, and
+            <p>Videos have their own <b>Videos</b> tab next to <b>Songs</b>. Each tab is its own list with its own numbers; switching tabs clears the selection and filter, and
                <b>Measure</b> and <b>Level all</b> only work on the tab that's open. A video's sound is leveled to match your songs,
                so a video in a playlist isn't louder or quieter than the songs around it.
                Only the sound is ever touched: on FPP versions that can turn a video's sound up or down as it plays, a volume change goes there and the file isn't changed;
@@ -141,7 +141,7 @@
             <ul>
                 <li><b>Already close:</b> a song within about half a decibel of the target is left untouched.</li>
                 <li><b>Lossless (MP3s):</b> when an MP3 only needs turning up or down, its volume is changed the way MP3Gain does it,
-                    by adjusting the gain stored in each frame, in 1.5 dB steps. Nothing is re-encoded, so there's no quality loss at all,
+                    by adjusting the gain stored in each frame, in steps of about 1.5 dB (1.505 dB). Nothing is re-encoded, so there's no quality loss at all,
                     and the song ends up within about ¾ dB of the target. Turn this off under <b>Lossless volume change for MP3s</b>
                     if you'd rather every song hit the target exactly.</li>
                 <li><b>Re-encoded at top quality:</b> songs that need the limiter or compression, and formats other than MP3, are re-encoded:
