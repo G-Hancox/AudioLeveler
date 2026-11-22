@@ -1465,8 +1465,14 @@ class Worker:
 def main():
     # Started by fppd through the "Audio Leveler: Start Job" command: the page
     # left the full command line in a launch file.
+    token = None
     if len(sys.argv) == 3 and sys.argv[1] == "--launch":
         launch = read_json(sys.argv[2], {})
+        try:
+            os.remove(sys.argv[2])  # used once
+        except OSError:
+            pass
+        token = launch.get("token")
         argv = launch.get("argv")
         if not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
             return 1
@@ -1529,6 +1535,13 @@ def run_job(args, log_problem):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
         logging.warning("Another Audio Leveler job is already running; not starting a second one.")
+        # The page is waiting on this job: say why it didn't start rather than
+        # leave it showing "Starting…".
+        jpath = os.path.join(args.data, "job.json")
+        j = read_json(jpath, {})
+        if token and j.get("state") == "starting" and j.get("token") == token:
+            write_json(jpath, {"cmd": args.command, "state": "error", "finished": now(), "results": [],
+                               "message": "Another Audio Leveler job was already running. Try again when it finishes."})
         return 1
 
     for tool in ("ffmpeg", "ffprobe"):

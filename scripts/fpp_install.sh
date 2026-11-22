@@ -5,6 +5,9 @@ set -e
 
 : "${FPPDIR:=/opt/fpp}"
 . "${FPPDIR}/scripts/common"
+# Treat an unset variable as an error from here on (FPP's common script,
+# above, isn't written for it).
+set -u
 
 PLUGIN_LOG="${LOGDIR}/plugin-AudioLeveler.log"
 echo "$(date '+%Y-%m-%d %H:%M:%S') Installing Audio Leveler" >> "$PLUGIN_LOG"

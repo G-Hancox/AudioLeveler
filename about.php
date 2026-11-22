@@ -111,7 +111,9 @@
 
             <h6 class="fw-semibold">Working with FPP's Normalize (FPP 10.4 and later)</h6>
             <p>FPP 10.4 has a <b>Normalize</b> button in File Manager that turns each song up or down as it plays, without changing the file.
-               On those versions Audio Leveler uses it for all leveling, so your files are never changed and timing can't drift.
+               On those versions Audio Leveler uses it for every plain volume change, so those files are never changed and timing can't drift.
+               A file is rewritten (original kept) only for the limiter, compression, or a target Normalize can't take: it accepts
+               -30 to -5 LUFS, and a very low Background level can go below that.
                What Audio Leveler adds is everything Normalize doesn't show or do: each song's loudness, peaks and clipping before and after,
                notes on what might sound better, <b>Background</b> levels for ambiance, automatic leveling of new uploads, and the limiter.</p>
             <p>Normalize never turns a song up past where its peaks would distort, so a quiet song with sharp peaks lands a little short; its note says by how much.

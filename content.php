@@ -48,7 +48,7 @@ function AudioLevelerPrintSetting($name)
                 </div>
                 <div class="card-body">
                     <?php if (AudioLevelerPlaybackGainSupported()) { ?>
-                    <div class="alert alert-info small py-2 mb-3">Leveling is done by FPP's own <b>Normalize</b>, so your files are never changed.
+                    <div class="alert alert-info small py-2 mb-3">Leveling is done by FPP's own <b>Normalize</b>, so songs that only need a volume change are left exactly as uploaded.
                         Audio Leveler shows you what it did, suggests what might sound better, and adds what Normalize doesn't:
                         Background levels, automatic leveling of new uploads, and the limiter when you want it.</div>
                     <?php } ?>
@@ -215,7 +215,7 @@ function AudioLevelerPrintSetting($name)
                         <button id="alRestoreSel" type="button" class="buttons btn btn-sm btn-outline-secondary" disabled>Restore originals</button>
                     </div>
 
-                    <div class="al-scroll mb-2">
+                    <div class="al-scroll table-responsive mb-2">
                         <table class="table table-sm table-hover align-middle mb-0">
                             <thead>
                                 <tr>

@@ -8,8 +8,10 @@
 #
 #   Queued job (default)    the measuring/leveling/restoring job the page
 #                           queued (launch.json). Run on its own, from a
-#                           playlist say, it does nothing: only a job queued in
-#                           the last 30 seconds is started.
+#                           playlist say, it does nothing: the launch file is
+#                           used up by the run it was queued for, and only
+#                           started when its token matches the job that is
+#                           starting.
 #   Check videos for sound  bin/probe_videos.py, for videos not checked yet.
 #   Level new uploads       bin/auto_check.sh (does nothing unless automatic
 #                           leveling is switched on).
@@ -25,9 +27,10 @@ if [ "${TASK}" = "Level new uploads" ]; then
 fi
 
 RUN_AS=""
-if [ "$(id -u)" = "0" ] && id fpp >/dev/null 2>&1; then
-    RUN_AS="runuser -u fpp --"
-    command -v runuser >/dev/null 2>&1 || RUN_AS="sudo -u fpp"
+FPP_USER="${FPPUSER:-fpp}"
+if [ "$(id -u)" = "0" ] && id "${FPP_USER}" >/dev/null 2>&1; then
+    RUN_AS="runuser -u ${FPP_USER} --"
+    command -v runuser >/dev/null 2>&1 || RUN_AS="sudo -u ${FPP_USER}"
 fi
 PRIO="nice -n 19"
 command -v ionice >/dev/null 2>&1 && PRIO="${PRIO} ionice -c 3"
@@ -54,12 +57,19 @@ case "${TASK}" in
         detach python3 "${PLUGIN_DIR}/bin/probe_videos.py" --videos "${VIDEOS}" --data "${DATA}"
         ;;
     "Queued job")
-        [ -f "${LAUNCH}" ] || exit 0
-        python3 -c 'import json, sys, time
-j = json.load(open(sys.argv[1]))
-sys.exit(0 if j.get("state") == "starting" and time.time() - float(j.get("requested", 0)) < 30 else 1)' \
-            "${DATA}/job.json" 2>/dev/null || exit 0
-        detach python3 "${PLUGIN_DIR}/bin/leveler.py" --launch "${LAUNCH}"
+        # Claim the launch file in one step (a rename): only one run can.
+        CLAIM="${DATA}/launch.$$.json"
+        mv -f "${LAUNCH}" "${CLAIM}" 2>/dev/null || exit 0
+        # Start it only for the job that is starting with the same token.
+        if ! python3 -c 'import json, sys
+launch, job = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+t = launch.get("token")
+sys.exit(0 if t and job.get("state") == "starting" and job.get("token") == t else 1)' \
+            "${CLAIM}" "${DATA}/job.json" 2>/dev/null; then
+            rm -f "${CLAIM}"
+            exit 0
+        fi
+        detach python3 "${PLUGIN_DIR}/bin/leveler.py" --launch "${CLAIM}"
         ;;
 esac
 exit 0

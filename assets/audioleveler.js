@@ -65,7 +65,12 @@
             init.body = JSON.stringify(body);
         }
         return fetch(API + path, init).then(function (r) {
-            return r.json().catch(function () { return {}; }).then(function (j) {
+            return r.json().catch(function () {
+                // A reply that isn't JSON (a PHP warning printed in front of
+                // it, say) is a problem to show, not an empty answer.
+                if (r.ok) { throw new Error('FPP sent back something Audio Leveler couldn\'t read. Check the plugin log (Help > FPP Logs).'); }
+                return {};
+            }).then(function (j) {
                 if (!r.ok) {
                     throw new Error(j.message || ('Request failed (' + r.status + ')'));
                 }
@@ -663,6 +668,7 @@
             selected = keep;
             $id('alNoFfmpeg').classList.toggle('d-none', j.haveFfmpeg !== false);
             var bk = j.backups || { count: 0, bytes: 0 };
+            backupCount = bk.count || 0;
             $id('alBackupInfo').textContent = bk.count
                 ? bk.count + ' original' + (bk.count === 1 ? '' : 's') + ' backed up (' + fmtBytes(bk.bytes) + ')' +
                   (j.freeBytes ? ', ' + fmtBytes(j.freeBytes) + ' free' : '')
@@ -807,6 +813,7 @@
 
     var info = { files: [], edits: {}, filter: 'all', search: '', loaded: false };
     var scanning = false;
+    var backupCount = 0;
 
     // Bits that don't belong in a song's info: "(Official Video)", "[Lyrics]", a website...
     var TAG_JUNK = /\s*[\(\[\{]\s*(?:official\s*(?:music\s*|lyrics?\s*|hd\s*)?(?:video|audio|visuali[sz]er)?|lyrics?(?:\s*video)?|audio(?:\s*only)?|visuali[sz]er|hq|hd|4k|explicit|free\s*download|out\s*now|(?:no\s*)?copyright(?:\s*free)?|full\s*song)\s*[\)\]\}]/ig;
@@ -1165,7 +1172,7 @@
             }
             deleteArmed = false;
             b.textContent = 'Delete all backups';
-            api('DELETE', 'backups').then(function (j) {
+            api('DELETE', 'backups', { count: backupCount }).then(function (j) {
                 toast('Deleted ' + j.deleted + ' backup(s).');
                 loadFiles();
             }).catch(function (e) { toast(e.message, false); });

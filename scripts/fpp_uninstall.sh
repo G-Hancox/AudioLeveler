@@ -5,6 +5,9 @@ set -e
 
 : "${FPPDIR:=/opt/fpp}"
 . "${FPPDIR}/scripts/common"
+# Treat an unset variable as an error from here on (FPP's common script,
+# above, isn't written for it).
+set -u
 
 PLUGIN_LOG="${LOGDIR}/plugin-AudioLeveler.log"
 DATADIR="${MEDIADIR}/plugindata/AudioLeveler"
@@ -15,8 +18,9 @@ pkill -f "AudioLeveler/bin/probe_videos.py" 2>/dev/null || true
 
 if [ -d "${DATADIR}" ]; then
     rm -rf "${DATADIR}/tmp"
-    rm -f "${DATADIR}/cancel" "${DATADIR}/worker.lock" "${DATADIR}/probe.lock" "${DATADIR}/launch.json" \
-          "${DATADIR}/request.json" "${DATADIR}"/*.tmp
+    rm -f "${DATADIR}/cancel" "${DATADIR}/worker.lock" "${DATADIR}/probe.lock" "${DATADIR}/start.lock" \
+          "${DATADIR}/launch.json" "${DATADIR}"/launch.*.json "${DATADIR}/request.json" "${DATADIR}"/*.tmp \
+          "${DATADIR}"/*.tmp.*
 fi
 
 # A Reinstall (FPP sets FPP_PLUGIN_REINSTALL=1 from 10.4) keeps everything:

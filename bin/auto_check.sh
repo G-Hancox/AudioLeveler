@@ -34,10 +34,11 @@ fi
 touch "${STAMP}" 2>/dev/null
 
 RUN_AS=""
-if [ "$(id -u)" = "0" ] && id fpp >/dev/null 2>&1; then
-    chown fpp:fpp "${STAMP}" 2>/dev/null
-    RUN_AS="runuser -u fpp --"
-    command -v runuser >/dev/null 2>&1 || RUN_AS="sudo -u fpp"
+FPP_USER="${FPPUSER:-fpp}"
+if [ "$(id -u)" = "0" ] && id "${FPP_USER}" >/dev/null 2>&1; then
+    chown "${FPP_USER}:${FPPGROUP:-${FPP_USER}}" "${STAMP}" 2>/dev/null
+    RUN_AS="runuser -u ${FPP_USER} --"
+    command -v runuser >/dev/null 2>&1 || RUN_AS="sudo -u ${FPP_USER}"
 fi
 PRIO="nice -n 19"
 command -v ionice >/dev/null 2>&1 && PRIO="${PRIO} ionice -c 3"

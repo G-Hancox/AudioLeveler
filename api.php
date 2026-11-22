@@ -17,7 +17,7 @@
  *   POST   cancel     stop the running job after the current song
  *   GET    options    the saved settings (FPP saves them: settings.json + PrintPluginSetting)
  *   POST   settingschanged   the page saved a setting: refresh what background work uses
- *   DELETE backups    delete every backed-up original
+ *   DELETE backups    delete every backed-up original   body: {"count": <how many the page showed>}
  *
  * The heavy lifting is done by bin/leveler.py, started in the background at
  * low priority so a web request never waits on ffmpeg. fppd starts it, through
@@ -265,47 +265,101 @@ function AudioLevelerScope($body)
     return in_array($scope, array('songs', 'videos'), true) ? $scope : 'songs';
 }
 
+// Write a file in one step (written beside it, then renamed), so a reader
+// never sees it half written. FPP 10 has WriteFileAtomic(); the fallback is
+// the same idea.
+function AudioLevelerWriteAtomic($path, $data)
+{
+    if (function_exists('WriteFileAtomic')) {
+        return WriteFileAtomic($path, $data);
+    }
+    $tmp = $path . '.tmp.' . getmypid() . '.' . bin2hex(random_bytes(4));
+    if (@file_put_contents($tmp, $data) !== strlen($data) || !@rename($tmp, $path)) {
+        @unlink($tmp);
+        return false;
+    }
+    return true;
+}
+
+// True while a worker holds its lock (a job of the page's, or automatic leveling).
+function AudioLevelerWorkerRunning()
+{
+    $fp = @fopen(AudioLevelerDataDir() . '/worker.lock', 'c');
+    if (!$fp) {
+        return false;
+    }
+    $free = flock($fp, LOCK_SH | LOCK_NB);
+    if ($free) {
+        flock($fp, LOCK_UN);
+    }
+    fclose($fp);
+    return !$free;
+}
+
 function AudioLevelerStart($command, $request)
 {
-    if (AudioLevelerBusy()) {
-        return AudioLevelerError(409, 'A job is already running. Wait for it to finish or cancel it first.');
-    }
     if (is_array($request['files']) && count($request['files']) == 0) {
         return AudioLevelerError(400, 'No songs selected.');
     }
-
     $data = AudioLevelerDataDir();
-    $reqFile = $data . '/request.json';
-    $previousJob = @file_get_contents($data . '/job.json');
-    file_put_contents($reqFile, json_encode($request));
-    @unlink($data . '/cancel');
-    file_put_contents($data . '/job.json', json_encode(array(
-        'cmd' => $command,
-        'state' => 'starting',
-        'requested' => time(),
-        'done' => 0,
-        'total' => 0,
-        'results' => array(),
-    )));
 
-    // The worker's command line, for fppd's Start Job command to run.
-    $argv = array($command, '--music', AudioLevelerMusicDir(), '--videos', AudioLevelerVideoDir(), '--data', $data,
-        '--log', AudioLevelerLogFile(), '--request', $reqFile);
-    file_put_contents($data . '/launch.json', json_encode(array('argv' => $argv)));
+    // One start at a time: the busy check and the files it leads to are done
+    // under one lock, so two clicks (or two browsers) can't both start a job
+    // or leave the files out of step.
+    $lock = @fopen($data . '/start.lock', 'c');
+    if ($lock) {
+        flock($lock, LOCK_EX);
+    }
+    try {
+        if (AudioLevelerBusy() || AudioLevelerWorkerRunning()) {
+            return AudioLevelerError(409, 'A job is already running. Wait for it to finish or cancel it first.');
+        }
 
-    if (AudioLevelerRunCommand('Queued job')) {
-        AudioLevelerLog("Started $command job");
-        return json(array('status' => 'OK'));
+        $reqFile = $data . '/request.json';
+        $previousJob = @file_get_contents($data . '/job.json');
+        // Ties this request to the job fppd starts for it: start_job.sh only
+        // runs a launch file whose token matches the job that is starting, and
+        // uses it up, so the command run again (from a playlist, say) or a
+        // stale file never starts anything.
+        $token = bin2hex(random_bytes(16));
+        // The worker's command line, for fppd's Start Job command to run.
+        $argv = array($command, '--music', AudioLevelerMusicDir(), '--videos', AudioLevelerVideoDir(), '--data', $data,
+            '--log', AudioLevelerLogFile(), '--request', $reqFile);
+        @unlink($data . '/cancel');
+        $ok = AudioLevelerWriteAtomic($reqFile, json_encode($request))
+            && AudioLevelerWriteAtomic($data . '/job.json', json_encode(array(
+                'cmd' => $command,
+                'state' => 'starting',
+                'requested' => time(),
+                'token' => $token,
+                'done' => 0,
+                'total' => 0,
+                'results' => array(),
+            )))
+            && AudioLevelerWriteAtomic($data . '/launch.json', json_encode(array('argv' => $argv, 'token' => $token)));
+
+        if ($ok && AudioLevelerRunCommand('Queued job')) {
+            AudioLevelerLog("Started $command job");
+            return json(array('status' => 'OK'));
+        }
+        // All background work runs under fppd, never under the web server.
+        // Nothing started: the page goes back to showing the last job.
+        @unlink($data . '/launch.json');
+        if ($previousJob !== false) {
+            AudioLevelerWriteAtomic($data . '/job.json', $previousJob);
+        } else {
+            @unlink($data . '/job.json');
+        }
+        if (!$ok) {
+            return AudioLevelerError(500, 'Couldn\'t save the job in the plugin\'s data folder. Check the plugin log (Help > FPP Logs).');
+        }
+        return AudioLevelerError(503, 'FPPD isn\'t running, so the job can\'t start. Start FPPD (top of any FPP page), then try again.');
+    } finally {
+        if ($lock) {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
     }
-    // All background work runs under fppd, never under the web server.
-    // Nothing started: the page goes back to showing the last job.
-    @unlink($data . '/launch.json');
-    if ($previousJob !== false) {
-        file_put_contents($data . '/job.json', $previousJob);
-    } else {
-        @unlink($data . '/job.json');
-    }
-    return AudioLevelerError(503, 'FPPD isn\'t running, so the job can\'t start. Start FPPD (top of any FPP page), then try again.');
 }
 
 /* Ask fppd to run the Start Job command with this Task. False if fppd can't be asked or doesn't have the command. */
@@ -332,7 +386,10 @@ function AudioLevelerRunCommand($task)
         'ignore_errors' => true,
     )));
     $ok = @file_get_contents('http://127.0.0.1/api/command/' . rawurlencode(AUDIOLEVELER_START_COMMAND), false, $ctx);
-    $headers = isset($http_response_header) ? $http_response_header : array();
+    // $http_response_header is deprecated from PHP 8.4 (FPP on Debian Trixie).
+    $headers = function_exists('http_get_last_response_headers')
+        ? (http_get_last_response_headers() ?: array())
+        : (isset($http_response_header) ? $http_response_header : array());
     return $ok !== false && isset($headers[0]) && preg_match('#^HTTP/\S+\s+200#', $headers[0]);
 }
 
@@ -745,13 +802,27 @@ function AudioLevelerDeleteBackups()
     if (AudioLevelerBusy()) {
         return AudioLevelerError(409, 'Wait for the running job to finish first.');
     }
+    // These are the only copies of the originals, so the request must say how
+    // many it means to delete (the number the page showed when it was
+    // confirmed). A request without it, or made when the backups have
+    // changed since, deletes nothing.
+    $files = AudioLevelerBackupFiles();
+    $body = AudioLevelerBody();
+    $want = isset($body['count']) && is_int($body['count']) ? $body['count'] : -1;
+    $from = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : 'unknown';
+    if ($want !== count($files)) {
+        AudioLevelerLog("Refused to delete backups for $from: asked for " . ($want < 0 ? 'no count' : $want) . ', there are ' . count($files));
+        return AudioLevelerError($want < 0 ? 400 : 409, $want < 0
+            ? 'Say how many backups to delete ({"count": N}); nothing was deleted.'
+            : 'The backups have changed since the page showed them. Reload the page and try again.');
+    }
     $n = 0;
-    foreach (AudioLevelerBackupFiles() as $f) {
+    foreach ($files as $f) {
         if (@unlink($f)) {
             $n++;
         }
     }
-    AudioLevelerLog("Deleted $n backup(s)");
+    AudioLevelerLog("Deleted $n backup(s) for $from");
     return json(array('status' => 'OK', 'deleted' => $n));
 }
 
