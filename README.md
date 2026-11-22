@@ -152,6 +152,7 @@ Both, on FPP 10.4+: Audio Leveler drives FPP's Normalize (see above) and adds th
 | `scripts/fpp_install.sh`, `scripts/fpp_uninstall.sh` | Install and uninstall (both safe to run twice; uninstall keeps backups, and a Reinstall keeps everything) |
 | `about.php` | Help page |
 | `icon.png`, `icon.svg` | Plugin icon |
+| `tests/test_worker_lock.py` | Tests for how a queued job starts when another holds the worker lock or the page has moved on (`python3 tests/test_worker_lock.py`; no FPP needed) |
 | `LICENSE` | GPLv2 licence text |
 
 The log is `logs/plugin-AudioLeveler.log`.

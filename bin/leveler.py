@@ -1513,36 +1513,67 @@ def main():
         log_problem = "can't write the plugin log (%s)" % ex.strerror
         logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
+    args.owns_job = False
     try:
-        return run_job(args, log_problem)
+        return run_job(args, log_problem, token)
     except Exception as ex:
         logging.exception("Audio Leveler worker failed to start")
+        # Only report into job.json when it is this worker's job: never over
+        # another job's progress.
         try:
-            write_json(os.path.join(args.data, "job.json"),
-                       {"cmd": args.command, "state": "error", "finished": now(), "results": [],
-                        "message": "The worker could not start: %s" % ex})
+            jpath = os.path.join(args.data, "job.json")
+            if args.owns_job or is_our_starting_job(jpath, token):
+                write_json(jpath, {"cmd": args.command, "state": "error", "finished": now(), "results": [],
+                                   "message": "The worker could not start: %s" % ex})
         except Exception:
             pass
         return 1
 
 
-def run_job(args, log_problem):
+ANOTHER_JOB_MESSAGE = "Another Audio Leveler job was already running. Try again when it finishes."
+
+
+def is_our_starting_job(jpath, token):
+    """True when job.json is the starting job this worker was launched for."""
+    if not token:
+        return False
+    j = read_json(jpath, {})
+    return j.get("state") == "starting" and j.get("token") == token
+
+
+def run_job(args, log_problem, token=None):
     if log_problem:
         logging.warning("Audio Leveler %s", log_problem)
     os.makedirs(args.data, exist_ok=True)
+    jpath = os.path.join(args.data, "job.json")
     lock = open(os.path.join(args.data, "worker.lock"), "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        logging.warning("Another Audio Leveler job is already running; not starting a second one.")
-        # The page is waiting on this job: say why it didn't start rather than
-        # leave it showing "Starting…".
-        jpath = os.path.join(args.data, "job.json")
-        j = read_json(jpath, {})
-        if token and j.get("state") == "starting" and j.get("token") == token:
-            write_json(jpath, {"cmd": args.command, "state": "error", "finished": now(), "results": [],
-                               "message": "Another Audio Leveler job was already running. Try again when it finishes."})
-        return 1
+    # A launched job waits a few seconds for the lock: a stale worker that
+    # got it first only holds it while it finds out it isn't wanted.
+    give_up = time.time() + (5 if token else 0)
+    while True:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.time() < give_up:
+                time.sleep(0.25)
+                continue
+            logging.warning("Another Audio Leveler job is already running; not starting a second one.")
+            # The page is waiting on this job: say why it didn't start rather
+            # than leave it showing "Starting…". Anyone else's job.json is
+            # left alone.
+            if is_our_starting_job(jpath, token):
+                write_json(jpath, {"cmd": args.command, "state": "error", "finished": now(), "results": [],
+                                   "message": ANOTHER_JOB_MESSAGE})
+            return 1
+
+    # Started late (the page gave up on it and may have queued another job):
+    # only run when job.json is still the starting job with this token, so a
+    # late worker never runs with the next job's request.
+    if token and not is_our_starting_job(jpath, token):
+        logging.warning("A queued job started after the page had moved on; not running it.")
+        return 0
+    args.owns_job = True
 
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:

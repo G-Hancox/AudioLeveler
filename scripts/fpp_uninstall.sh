@@ -18,7 +18,7 @@ pkill -f "AudioLeveler/bin/probe_videos.py" 2>/dev/null || true
 
 if [ -d "${DATADIR}" ]; then
     rm -rf "${DATADIR}/tmp"
-    rm -f "${DATADIR}/cancel" "${DATADIR}/worker.lock" "${DATADIR}/probe.lock" "${DATADIR}/start.lock" \
+    rm -f "${DATADIR}/cancel" "${DATADIR}/worker.lock" "${DATADIR}/probe.lock" "${DATADIR}/start.lock" "${DATADIR}/autocheck.lock" \
           "${DATADIR}/launch.json" "${DATADIR}"/launch.*.json "${DATADIR}/request.json" "${DATADIR}"/*.tmp \
           "${DATADIR}"/*.tmp.*
 fi

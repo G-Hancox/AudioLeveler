@@ -20,7 +20,11 @@ SETTINGS="${DATA}/auto.json"
 [ -f "${SETTINGS}" ] || exit 0
 grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true' "${SETTINGS}" || exit 0
 
-# At most one check a minute.
+# One check at a time (callbacks and the page can ask at the same moment),
+# and at most one a minute.
+if command -v flock >/dev/null 2>&1; then
+    exec 9>>"${DATA}/autocheck.lock" 2>/dev/null && { flock -n 9 || exit 0; }
+fi
 STAMP="${DATA}/auto.last"
 if [ -f "${STAMP}" ] && [ $(( $(date +%s) - $(stat -c %Y "${STAMP}" 2>/dev/null || echo 0) )) -lt 60 ]; then
     exit 0

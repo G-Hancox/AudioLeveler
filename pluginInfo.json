@@ -2,7 +2,7 @@
 	"repoName": "AudioLeveler",
 	"name": "Audio Leveler",
 	"author": "G-Hancox",
-	"description": "A companion to FPP's built-in Normalize. On FPP 10.4 and later, Normalize does the leveling, so songs that only need a volume change are left exactly as uploaded, and Audio Leveler adds what Normalize leaves out: each song's loudness, peaks and clipping, notes on what it did and what might sound better, Background levels for ambiance and off-hours tracks, automatic leveling of new and re-uploaded songs, an optional true-peak limiter for songs Normalize leaves short, a one-click fix for MP3s that play 25 ms late on FPP, and a Song info tab to tidy Title and Artist (what FPP and FM RDS show). On FPP 10.0-10.3, which have no Normalize, it does the leveling itself (losslessly for MP3s where it can) and keeps backups. Handles video soundtracks too, without touching the picture. Waits until no show is playing, and runs entirely on this device.",
+	"description": "A companion to FPP's Normalize (10.4+): shows each song's loudness, peaks and clipping, sets Background levels for ambiance, levels new uploads automatically, offers a limiter for songs Normalize leaves short, fixes MP3s that play 25 ms late, and tidies Title/Artist for FPP and FM RDS. On FPP 10.0-10.3 it levels files itself, with backups. Songs and video soundtracks; runs only on this device.",
 	"homeURL": "https://github.com/G-Hancox/AudioLeveler",
 	"srcURL": "https://github.com/G-Hancox/AudioLeveler.git",
 	"bugURL": "https://github.com/G-Hancox/AudioLeveler/issues",

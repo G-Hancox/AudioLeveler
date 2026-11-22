@@ -315,6 +315,14 @@ function AudioLevelerStart($command, $request)
             return AudioLevelerError(409, 'A job is already running. Wait for it to finish or cancel it first.');
         }
 
+        // A launch file claimed by fppd but never run (python3 couldn't be
+        // started, say) is swept up here rather than left until uninstall.
+        foreach (glob($data . '/launch.*.json') ?: array() as $old) {
+            if (@filemtime($old) < time() - 600) {
+                @unlink($old);
+            }
+        }
+
         $reqFile = $data . '/request.json';
         $previousJob = @file_get_contents($data . '/job.json');
         // Ties this request to the job fppd starts for it: start_job.sh only
@@ -385,11 +393,20 @@ function AudioLevelerRunCommand($task)
         'timeout' => 10,
         'ignore_errors' => true,
     )));
-    $ok = @file_get_contents('http://127.0.0.1/api/command/' . rawurlencode(AUDIOLEVELER_START_COMMAND), false, $ctx);
-    // $http_response_header is deprecated from PHP 8.4 (FPP on Debian Trixie).
-    $headers = function_exists('http_get_last_response_headers')
-        ? (http_get_last_response_headers() ?: array())
-        : (isset($http_response_header) ? $http_response_header : array());
+    // Read the reply as a stream so its status line comes from the stream's
+    // metadata: no $http_response_header, which PHP 8.4+ (FPP on Debian
+    // Trixie) deprecates, and the same on every PHP version.
+    $fp = @fopen('http://127.0.0.1/api/command/' . rawurlencode(AUDIOLEVELER_START_COMMAND), 'r', false, $ctx);
+    $ok = false;
+    $headers = array();
+    if ($fp) {
+        $ok = stream_get_contents($fp);
+        $meta = stream_get_meta_data($fp);
+        fclose($fp);
+        if (isset($meta['wrapper_data']) && is_array($meta['wrapper_data'])) {
+            $headers = $meta['wrapper_data'];
+        }
+    }
     return $ok !== false && isset($headers[0]) && preg_match('#^HTTP/\S+\s+200#', $headers[0]);
 }
 

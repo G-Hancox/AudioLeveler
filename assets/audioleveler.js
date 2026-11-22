@@ -620,8 +620,13 @@
         });
     }
 
+    var filesSeq = 0;
     function loadFiles() {
+        // Two loads can overlap (a poll and a click): only the newest one's
+        // answer is used, so an older reply never puts back a stale list.
+        var seq = ++filesSeq;
         return api('GET', 'files').then(function (j) {
+            if (seq !== filesSeq) { return; }
             allFiles = j.files || [];
             pgSupported = !!j.playbackGainSupported;
             pgVideos = !!j.playbackGainVideos;
