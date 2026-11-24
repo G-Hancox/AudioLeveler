@@ -518,6 +518,9 @@ class Worker:
             os.makedirs(d, exist_ok=True)
         self.analysis_path = os.path.join(self.data, "analysis.json")
         self.leveled_path = os.path.join(self.data, "leveled.json")
+        # The Title and Artist last saved on the Song info tab, so the page can
+        # tell when an upload has put the old info back (api.php reads it).
+        self.songinfo_path = os.path.join(self.data, "songinfo.json")
         self.job_path = os.path.join(self.data, "job.json")
         self.cancel_path = os.path.join(self.data, "cancel")
         global CANCEL_FILE, PROGRESS
@@ -1351,6 +1354,7 @@ class Worker:
                 old = file_sig(path)
                 now_tags = id3tags.read_tags(path)
                 if now_tags["title"] == title.strip() and now_tags["artist"] == artist.strip():
+                    self.remember_info(name, title, artist)
                     self.result(name, True, "already had this info")
                     continue
                 r = id3tags.write_tags(path, title, artist, os.path.join(self.tmpdir, "tagging.mp3"))
@@ -1371,8 +1375,20 @@ class Worker:
                     id3tags.write_tags(bpath, title, artist, os.path.join(self.tmpdir, "tagging.mp3"))
                 except (OSError, id3tags.TagError) as ex:
                     logging.warning("%s: couldn't update the backed-up original's info: %s", name, ex)
+            self.remember_info(name, title, artist)
             self.result(name, True, "info updated")
         self.save_job(done=len(files) if not self.cancelled() else self.job.get("done", 0))
+
+    def remember_info(self, name, title, artist):
+        """Note what was saved for a song (songinfo.json, shared with the page under songinfo.lock)."""
+        try:
+            with open(os.path.join(self.data, "songinfo.lock"), "a") as lk:
+                fcntl.flock(lk, fcntl.LOCK_EX)
+                info = read_json(self.songinfo_path, {})
+                info[name] = {"title": title.strip(), "artist": artist.strip(), "saved": now()}
+                write_json(self.songinfo_path, info)
+        except OSError as ex:
+            logging.warning("%s: couldn't note its saved info: %s", name, ex)
 
     def move_gain(self, name, old_size):
         """Keep FPP's Normalize setting for a song whose tag grew (see api.php gainsize)."""

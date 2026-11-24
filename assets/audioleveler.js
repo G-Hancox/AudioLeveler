@@ -873,8 +873,18 @@
         }).catch(function (e) { toast(e.message, false); return false; });
     }
 
+    // Info saved on this tab that an upload has since replaced (and that isn't
+    // already being put back).
+    function infoReplaced(f) {
+        if (!f.saved || !f.editable) { return false; }
+        var e = info.edits[f.name];
+        return !(e && e.title === f.saved.title && e.artist === f.saved.artist);
+    }
+
     function renderInfoBadge() {
-        var n = info.files.filter(function (f) { return f.editable && infoProblems({ title: f.title, artist: f.artist }).length; }).length;
+        var n = info.files.filter(function (f) {
+            return f.editable && (f.saved || infoProblems({ title: f.title, artist: f.artist }).length);
+        }).length;
         var b = $id('alInfoBadge');
         b.textContent = n;
         b.classList.toggle('d-none', !n);
@@ -891,11 +901,13 @@
                 'plugin can send to car radios (RDS). Only the info inside each MP3 changes: never the file name, so sequences and playlists ' +
                 'still find it, and the sound and timing stay exactly the same. Look the changes over, then <b>Save</b>.</p>' +
                 '<div class="alert alert-secondary small py-2 mb-3">Uploading a song again (from xLights, say) brings back the info in your ' +
-                'computer\'s copy. To keep a fix, also make it on your computer, or check this tab after uploading.</div>' +
+                'computer\'s copy. This tab remembers what you saved and flags songs an upload has changed, with <b>Put back your info</b> ' +
+                'to restore them. To make a fix stick for good, also make it on your computer.</div>' +
                 '<div class="d-flex flex-wrap gap-2 align-items-center mb-2">' +
                 '<button id="alInfoScan" type="button" class="buttons btn btn-sm btn-outline-primary" title="Looks in the music folder again, for songs uploaded since this page opened. Unsaved changes are kept.">Scan for songs</button>' +
                 '<button id="alInfoFill" type="button" class="buttons btn btn-sm btn-outline-secondary" title="Fills in blank titles and artists from file names like Artist - Title.mp3">Fill blanks from file names</button>' +
                 '<button id="alInfoClean" type="button" class="buttons btn btn-sm btn-outline-secondary" title="Removes (Official Video), [Lyrics], websites and similar">Clean up junk</button>' +
+                '<button id="alInfoPutBack" type="button" class="buttons btn btn-sm btn-outline-warning d-none" title="Puts back the info you saved here for songs an upload has replaced. Look them over, then Save.">Put back your info</button>' +
                 '<span class="me-auto"></span>' +
                 '<button id="alInfoUndo" type="button" class="btn btn-sm btn-link">Undo changes</button>' +
                 '<button id="alInfoSave" type="button" class="buttons btn btn-sm btn-success">Save</button></div>' +
@@ -918,7 +930,7 @@
         var q = info.search.toLowerCase();
         var list = info.files.filter(function (f) {
             var t = infoNow(f);
-            if (info.filter === 'look' && !(f.editable && infoProblems(t).length)) { return false; }
+            if (info.filter === 'look' && !(f.editable && (infoReplaced(f) || infoProblems(t).length))) { return false; }
             if (info.filter === 'changed' && !info.edits[f.name]) { return false; }
             return !q || (f.name + ' ' + t.title + ' ' + t.artist).toLowerCase().indexOf(q) >= 0;
         });
@@ -935,13 +947,17 @@
                     : f.notMp3 ? 'Not really an MP3 (another format named .mp3), so it\'s left alone'
                     : !f.editable ? 'Its info is stored in an old format: change it on your computer'
                     : infoProblems(t).join(' · ');
+                var replaced = infoReplaced(f) ? '<div class="text-warning-emphasis">An upload replaced the info you saved: ' +
+                    '<b>' + esc(f.saved.title || '(no title)') + '</b>' + (f.saved.artist ? ' by <b>' + esc(f.saved.artist) + '</b>' : '') +
+                    ' <button type="button" class="btn btn-link btn-sm p-0 align-baseline al-putback" data-n="' + esc(f.name) + '">Put back</button>' +
+                    ' · <button type="button" class="btn btn-link btn-sm p-0 align-baseline al-keep" data-n="' + esc(f.name) + '" title="The uploaded info is right: stop flagging this song">Keep upload\'s</button></div>' : '';
                 var input = function (k, label) {
                     return '<input type="text" class="form-control form-control-sm al-tag" data-k="' + k + '" data-n="' + esc(f.name) + '"' +
                         ' value="' + esc(t[k]) + '" placeholder="' + label + '" aria-label="' + label + ' of ' + esc(f.name) + '"' + (f.editable ? '' : ' disabled') + '>';
                 };
                 return '<div class="row g-2 mx-0 py-2 border-bottom align-items-center al-info-row' + (info.edits[f.name] ? ' al-changed' : '') + '">' +
                     '<div class="col-12 col-md-4 text-break small">' + esc(f.name) +
-                    (note ? '<div class="text-' + (f.editable ? 'warning-emphasis' : 'body-secondary') + '">' + esc(note) + '</div>' : '') + '</div>' +
+                    (note ? '<div class="text-' + (f.editable ? 'warning-emphasis' : 'body-secondary') + '">' + esc(note) + '</div>' : '') + replaced + '</div>' +
                     '<div class="col-6 col-md-4">' + input('title', 'Title') + '</div>' +
                     '<div class="col-6 col-md-4 d-flex gap-1">' + input('artist', 'Artist') +
                     (f.editable ? '<button type="button" class="btn btn-sm btn-outline-secondary al-swap" data-n="' + esc(f.name) + '" title="Swap Title and Artist" aria-label="Swap Title and Artist of ' + esc(f.name) + '">&#8644;</button>' : '') +
@@ -959,6 +975,10 @@
         $id('alInfoUndo').classList.toggle('d-none', !n);
         $id('alInfoFill').disabled = busy();
         $id('alInfoClean').disabled = busy();
+        var back = info.files.filter(infoReplaced).length;
+        $id('alInfoPutBack').classList.toggle('d-none', !back);
+        $id('alInfoPutBack').textContent = 'Put back your info (' + back + ')';
+        $id('alInfoPutBack').disabled = busy();
     }
 
     function wireInfo() {
@@ -975,12 +995,32 @@
             renderInfoButtons();
         });
         $id('alInfoRows').addEventListener('click', function (e) {
-            var b = e.target.closest('.al-swap');
+            var b = e.target.closest('.al-swap, .al-putback, .al-keep');
             var f = b && byName(b.getAttribute('data-n'));
             if (!f) { return; }
-            var t = infoNow(f);
-            setInfoEdit(f, t.artist, t.title);
+            if (b.classList.contains('al-swap')) {
+                var t = infoNow(f);
+                setInfoEdit(f, t.artist, t.title);
+                renderInfo();
+            } else if (b.classList.contains('al-putback')) {
+                setInfoEdit(f, f.saved.title, f.saved.artist);
+                renderInfo();
+            } else {
+                // The uploaded info is the one wanted: stop comparing it.
+                api('POST', 'tagsforget', { files: [f.name] }).then(function () {
+                    delete info.edits[f.name];
+                    return loadTags();
+                }).catch(function (ex) { toast(ex.message, false); });
+            }
+        });
+        $id('alInfoPutBack').addEventListener('click', function () {
+            var n = 0;
+            info.files.forEach(function (f) {
+                if (infoReplaced(f)) { setInfoEdit(f, f.saved.title, f.saved.artist); n++; }
+            });
+            info.filter = 'changed';
             renderInfo();
+            toast('Put back the info for ' + n + ' song' + (n === 1 ? '' : 's') + '. Look them over, then Save.');
         });
         // Re-check a row's notes once the edit is done, not on every key.
         $id('alInfoRows').addEventListener('change', function (e) { if (e.target.classList.contains('al-tag')) { renderInfo(); renderInfoBadge(); } });

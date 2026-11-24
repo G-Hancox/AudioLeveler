@@ -21,7 +21,7 @@
 				"where": "plugindata/AudioLeveler/backups/"
 			},
 			{
-				"what": "Loudness measurements, fix choices, leveling history and a log of what the plugin did",
+				"what": "Loudness measurements, fix choices, song info you set, leveling history and a log of what it did",
 				"about": "operator",
 				"keptDays": null,
 				"canDelete": false,

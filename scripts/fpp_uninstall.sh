@@ -34,7 +34,7 @@ fi
 # before leveling. The help page says where they are, to delete when wanted.
 rm -f "${MEDIADIR}/config/plugin.AudioLeveler"
 if [ -d "${DATADIR}" ]; then
-    rm -f "${DATADIR}/analysis.json" "${DATADIR}/leveled.json" "${DATADIR}/choices.json" "${DATADIR}/auto.json" \
+    rm -f "${DATADIR}/analysis.json" "${DATADIR}/leveled.json" "${DATADIR}/choices.json" "${DATADIR}/songinfo.json" "${DATADIR}/songinfo.lock" "${DATADIR}/auto.json" \
           "${DATADIR}/auto.last" "${DATADIR}/videoprobe.json" "${DATADIR}/job.json"
     rmdir "${DATADIR}/backups/videos" 2>/dev/null || true
     rmdir "${DATADIR}/backups" 2>/dev/null || true

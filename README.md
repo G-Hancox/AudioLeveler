@@ -102,7 +102,7 @@ The **Song info** tab lists every song's Title and Artist: what FPP shows while 
 - You can type straight into any row. Changes are highlighted and nothing is written until you press **Save**.
 - **Only the info inside the MP3 changes.** The file name never changes, so sequences and playlists keep finding the song. The audio, including the timing header, stays byte-for-byte the same (checked before every file is replaced), and the file's date is kept. When the new info fits in the tag's spare room, which is usual, the file keeps its size, so FPP's Normalize setting and the song's measurements stay valid. When the tag has to grow, both are moved over to the new size. A backed-up original gets the same info, so **Restore** keeps it.
 - MP3s only. Other formats, files using a very old tag format, and files that aren't really MP3s (an M4A renamed `.mp3`, say) are listed but left alone.
-- Uploading a song again (from xLights, say) brings back whatever info your computer's copy has, so make the same fix on your computer to keep it.
+- Uploading a song again (from xLights, say) brings back whatever info your computer's copy has. The tab remembers what you saved (`songinfo.json`) and flags any song an upload has changed: **Put back your info** stages your saved info for all of them (look it over, then Save), and each row has **Put back** and **Keep upload's** (for when the new info is the one you want). Nothing is put back on its own, since the upload may be the version you meant. To make a fix stick for good, also make it on your computer.
 
 ## Automatic leveling
 

@@ -134,7 +134,8 @@
                swaps Title and Artist for files named the other way round, and <b>Clean up junk</b> removes things like (Official Video), [Lyrics] and
                websites. Nothing is written until you press <b>Save</b>. Only the info inside the MP3 changes: never the file name, so sequences and playlists
                still find it, and the sound, timing and FPP's Normalize setting stay as they were. MP3s only. Uploading the song again brings back your
-               computer's copy's info, so make the same fix there too.</p>
+               computer's copy's info; the tab remembers what you saved and flags songs an upload changed, and <b>Put back your info</b> restores
+               them (or pick <b>Keep upload's</b> when the new info is right). To make a fix stick for good, make it on your computer too.</p>
 
             <h6 class="fw-semibold">Sound quality</h6>
             <p>Each song gets the gentlest treatment that does the job:</p>

@@ -13,6 +13,7 @@
  *   POST   retime     MP3s that play 25 ms late on FPP back in step   body: {"files": [...]|"all"}
  *   GET    tags       each song's Title and Artist (the Song info tab)
  *   POST   tags       change them                 body: {"edits": {"<song>": {"title", "artist"}}}
+ *   POST   tagsforget stop flagging songs whose uploaded info differs from what was saved   body: {"files": [...]}
  *   POST   gainsize   the worker grew a song's tag: keep FPP's Normalize setting for it   body: {"file", "oldSize"}
  *   POST   cancel     stop the running job after the current song
  *   GET    options    the saved settings (FPP saves them: settings.json + PrintPluginSetting)
@@ -46,6 +47,7 @@ function getEndpointsAudioLeveler()
         array('method' => 'POST', 'endpoint' => 'checkvideos', 'callback' => 'AudioLevelerCheckVideos'),
         array('method' => 'GET', 'endpoint' => 'tags', 'callback' => 'AudioLevelerTags'),
         array('method' => 'POST', 'endpoint' => 'tags', 'callback' => 'AudioLevelerSetTags'),
+        array('method' => 'POST', 'endpoint' => 'tagsforget', 'callback' => 'AudioLevelerTagsForget'),
         array('method' => 'POST', 'endpoint' => 'gainsize', 'callback' => 'AudioLevelerGainSize'),
     );
 }
@@ -1042,6 +1044,7 @@ function AudioLevelerTags()
 {
     AudioLevelerNoCache();
     $music = AudioLevelerMusicDir();
+    $saved = AudioLevelerReadJson(AudioLevelerDataDir() . '/songinfo.json', array());
     $files = array();
     foreach (is_dir($music) ? scandir($music) : array() as $n) {
         $path = "$music/$n";
@@ -1050,7 +1053,7 @@ function AudioLevelerTags()
         }
         $mp3 = strtolower(pathinfo($n, PATHINFO_EXTENSION)) === 'mp3';
         $t = $mp3 ? AudioLevelerReadTags($path) : null;
-        $files[] = array(
+        $row = array(
             'name' => $n,
             'mp3' => $mp3,
             'title' => $t ? $t['title'] : '',
@@ -1058,6 +1061,16 @@ function AudioLevelerTags()
             'editable' => $mp3 && $t && $t['editable'],
             'notMp3' => $mp3 && $t && $t['notMp3'],
         );
+        // Saved on this tab before, and the file now says something else: an
+        // upload (from xLights, say) put the computer's copy's info back.
+        if ($row['editable'] && isset($saved[$n]) && is_array($saved[$n])) {
+            $st = isset($saved[$n]['title']) ? (string) $saved[$n]['title'] : '';
+            $sa = isset($saved[$n]['artist']) ? (string) $saved[$n]['artist'] : '';
+            if ($st !== $row['title'] || $sa !== $row['artist']) {
+                $row['saved'] = array('title' => $st, 'artist' => $sa);
+            }
+        }
+        $files[] = $row;
     }
     return json(array('status' => 'OK', 'files' => $files));
 }
@@ -1116,5 +1129,35 @@ function AudioLevelerGainSize()
         return $changed;
     }, false);
     return json(array('status' => 'OK', 'changed' => $changed));
+}
+
+// POST /api/plugin/AudioLeveler/tagsforget
+// "Keep upload's": the info a song came back with is what's wanted, so stop
+// comparing it with what was saved here before.
+function AudioLevelerTagsForget()
+{
+    $body = AudioLevelerBody();
+    $names = isset($body['files']) && is_array($body['files']) ? array_filter($body['files'], 'is_string') : array();
+    $data = AudioLevelerDataDir();
+    $lock = @fopen($data . '/songinfo.lock', 'c');
+    if ($lock) {
+        flock($lock, LOCK_EX);
+    }
+    $saved = AudioLevelerReadJson($data . '/songinfo.json', array());
+    $n = 0;
+    foreach ($names as $name) {
+        if (isset($saved[$name])) {
+            unset($saved[$name]);
+            $n++;
+        }
+    }
+    if ($n) {
+        AudioLevelerWriteAtomic($data . '/songinfo.json', json_encode((object) $saved));
+    }
+    if ($lock) {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+    }
+    return json(array('status' => 'OK', 'forgotten' => $n));
 }
 ?>
