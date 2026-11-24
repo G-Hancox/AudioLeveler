@@ -135,7 +135,7 @@
                the show will, as a temporary one-song playlist (so K-FMT unmutes for it), but only while no show is playing and not just before a scheduled one; if a show starts, the preview stops.</p>
 
             <h6 class="fw-semibold">Audio EQ</h6>
-            <p>The <b>Audio EQ</b> tab drives FPP 10.4's own 5-band Parametric EQ with a three-way switch. <b>Off</b> leaves FPP untouched.
+            <p>The <b>Audio EQ</b> tab drives FPP's own 5-band Parametric EQ with a three-way switch. <b>Off</b> leaves FPP untouched.
                <b>Preview</b> lets you pick a preset (FM Clear, Bass Boost, Loudness, Vocal, Rock, Pop, Old Radio, Flat) or move the sliders and hear a test
                song through it in your browser only, with a VU meter; <b>Remember settings</b> keeps them. <b>Live</b> switches FPP's audio to
                Advanced with the EQ on your sound card (reboot); slider moves go out live and <b>Save to FPP</b> keeps them. Going back to Preview or

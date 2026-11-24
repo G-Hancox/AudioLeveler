@@ -1213,7 +1213,8 @@
         player.eqNodes = player.analysers = null;
         resetMeter();
         if (player.mode === 'show' && player.name && tellFpp !== false) {
-            api('POST', 'preview', { file: player.name, action: 'stop' }).catch(function () { /* stopped anyway */ });
+            // The next play waits for this, so a late stop never removes the new preview.
+            player.stopping = api('POST', 'preview', { file: player.name, action: 'stop' }).catch(function () { /* stopped anyway */ });
         }
         clearInterval(player.tick);
         player.tick = null;
@@ -1293,8 +1294,18 @@
 
     function playThroughShow(name) {
         var f = playFile(name);
-        return api('POST', 'preview', { file: name, action: 'play' }).then(function () {
-            if (player.name !== name || player.mode !== 'show') { return; }
+        var before = player.stopping || Promise.resolve();
+        player.stopping = null;
+        return before.then(function () {
+            if (player.name !== name || player.mode !== 'show') { return null; }
+            return api('POST', 'preview', { file: name, action: 'play', dur: f.dur || 0 });
+        }).then(function (j) {
+            if (!j) { return; }
+            if (player.name !== name || player.mode !== 'show') {
+                // Stopped or moved on while FPP was starting it: stop it there too.
+                player.stopping = api('POST', 'preview', { file: name, action: 'stop' }).catch(function () { /* stopped anyway */ });
+                return;
+            }
             player.started = Date.now();
             player.dur = f.dur || 0;
             // A silent copy in step with FPP, for the meter.
@@ -1401,7 +1412,7 @@
 
     /* ---------------- Audio EQ tab ----------------
        A front end for FPP's own equalizer: FPP's five EQ bands on the show's
-       sound card (Audio Output Groups, FPP 10.4+). A three-way switch:
+       sound card (Audio Output Groups, FPP 10 with PipeWire). A three-way switch:
        Off (FPP untouched, the tab greyed out), Preview (in the browser only)
        and Live (FPP's audio switched to Advanced with this EQ; out of
        it, FPP is put back as it was). When live, sliders change the running
@@ -1547,14 +1558,14 @@
                 msg = '<b>Off</b> &middot; FPP\'s audio is as you set it' +
                     (eq.rebootPending ? ' &middot; <b>reboot FPP to finish putting it back</b>' : '');
             }
-            if (!eq.supported) { msg += ' &middot; Live needs FPP 10.4 or later'; }
+            if (!eq.supported) { msg += ' &middot; this FPP has no PipeWire audio groups, so Live isn\'t available'; }
             if (eq.showRunning) { msg += ' &middot; a show is playing, so Live can\'t be switched now'; }
             st.innerHTML =
                 '<span class="small fw-semibold text-body-secondary text-uppercase">EQ</span>' +
                 '<span class="btn-group btn-group-sm al-eq-mode" role="group" aria-label="Audio EQ">' +
                 seg('off', 'Off', 'FPP untouched', eq.on && lock) +
                 seg('try', 'Preview', 'In your browser only', eq.on && lock) +
-                seg('show', 'Live', eq.supported ? 'On your speakers and FM (reboot)' : 'Needs FPP 10.4 or later', !eq.supported || (!eq.on && lock)) +
+                seg('show', 'Live', eq.supported ? 'On your speakers and FM (reboot)' : 'Needs FPP\'s PipeWire audio groups', !eq.supported || (!eq.on && lock)) +
                 '</span>' + helpIconHtml(EQ_WARNINGS) +
                 '<span class="small text-body-secondary al-eq-msg">' + msg + '</span>';
             initTips(st);
@@ -1835,6 +1846,7 @@
     function eqLeave() {
         eqRevertIfDirty(false);
         eq.gains = eq.saved.slice();
+        eq.after = true;   // other tabs hear what FPP plays
         if (eq.mode === 'try') { eq.mode = 'off'; }
         eq.delAsk = -1;
         $id('alEqConfirm') && $id('alEqConfirm').classList.add('d-none');

@@ -33,54 +33,50 @@ fi
 # (the same as unticking "EQ on"), and removes the temporary preview playlist.
 EQFILE="${DATADIR}/eq.json"
 if [ -f "${EQFILE}" ]; then
-    python3 - "${EQFILE}" "${MEDIADIR}/config/pipewire-audio-groups.json" <<'PY' 2>>"$PLUGIN_LOG" || true
-import json, os, sys, urllib.request
-eq_path, groups = sys.argv[1], sys.argv[2]
+    # Through FPP's own API, as unticking Live does; FPP's files are never
+    # written directly. If FPP's web server doesn't answer, the log says what
+    # to put back by hand.
+    python3 - "${EQFILE}" <<'PY' >>"$PLUGIN_LOG" 2>&1 || true
+import json, sys, time, urllib.request
 try:
-    d = json.load(open(eq_path))
+    d = json.load(open(sys.argv[1]))
 except Exception:
     sys.exit(0)
 if not d.get("on"):
     sys.exit(0)
+stamp = time.strftime("%Y-%m-%d %H:%M:%S")
 def api(method, path, body):
     data = body if isinstance(body, bytes) else json.dumps(body).encode()
-    req = urllib.request.Request("http://127.0.0.1/api/" + path, data=data, method=method)
+    req = urllib.request.Request("http://127.0.0.1/api/" + path, data=data, method=method,
+                                 headers={"Content-Type": "application/json" if not isinstance(body, bytes) else "text/plain"})
     try:
-        urllib.request.urlopen(req, timeout=20).read()
-        return True
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status == 200
     except Exception as e:
-        print("Audio EQ revert: %s %s failed: %s" % (method, path, e), file=sys.stderr)
+        print("%s Audio EQ: %s %s failed: %s" % (stamp, method, path, e))
         return False
-def setting(name, value):
-    # FPP's web server isn't answering: write FPP's settings file directly.
-    if api("PUT", "settings/" + name, value.encode()):
-        return
-    path = os.path.join(os.path.dirname(os.path.dirname(groups)), "settings")
+prev = d.get("prevGroups")
+if isinstance(prev, str):
     try:
-        lines = [l for l in open(path).read().splitlines() if l.split("=")[0].strip() != name]
-    except FileNotFoundError:
-        lines = []
-    lines.append('%s = "%s"' % (name, value))
-    with open(path + ".tmp", "w") as f:
-        f.write("\n".join(lines) + "\n")
-    os.replace(path + ".tmp", path)
-if d.get("hadGroupsFile") and isinstance(d.get("prevGroups"), str):
-    tmp = groups + ".tmp"
-    with open(tmp, "w") as f:
-        f.write(d["prevGroups"])
-    os.replace(tmp, groups)
-elif not d.get("hadGroupsFile"):
-    try:
-        os.unlink(groups)
-    except FileNotFoundError:
-        pass
+        prev = json.loads(prev)
+    except Exception:
+        prev = None
+if not isinstance(prev, dict) or not isinstance(prev.get("groups"), list):
+    prev = {"groups": []}
+ok = api("POST", "pipewire/audio/groups", prev)
+back = d.get("prevBackend") if d.get("prevBackend") in ("pipewire-simple", "pipewire") else "pipewire-simple"
 if d.get("switchedBackend"):
-    setting("MediaBackend", d.get("prevBackend") or "pipewire-simple")
-    setting("rebootFlag", "1")
+    ok = api("PUT", "settings/MediaBackend", back.encode()) and ok
+    api("PUT", "settings/rebootFlag", b"1")
 else:
-    api("POST", "pipewire/audio/groups/apply", {})
-print("Audio EQ was on: FPP's audio settings put back as they were")
+    ok = api("POST", "pipewire/audio/groups/apply", {}) and ok
+if ok:
+    print("%s Audio EQ was live: FPP's audio settings put back as they were" % stamp)
+else:
+    print("%s Audio EQ was live and FPP couldn't be asked to put its audio back: set FPP Settings > Audio/Video > Media Backend to %s"
+          " and remove the EQ from the Audio Output Group" % (stamp, "Simple" if back == "pipewire-simple" else "Advanced"))
 PY
+    chown "${FPPUSER:-fpp}:${FPPGROUP:-fpp}" "$PLUGIN_LOG" 2>/dev/null || true
 fi
 curl -s -m 10 -X DELETE "http://127.0.0.1/api/playlist/AudioLeveler-Preview" >/dev/null 2>&1 || true
 
@@ -90,7 +86,7 @@ curl -s -m 10 -X DELETE "http://127.0.0.1/api/playlist/AudioLeveler-Preview" >/d
 rm -f "${MEDIADIR}/config/plugin.AudioLeveler"
 if [ -d "${DATADIR}" ]; then
     rm -f "${DATADIR}/analysis.json" "${DATADIR}/leveled.json" "${DATADIR}/choices.json" "${DATADIR}/songinfo.json" "${DATADIR}/songinfo.lock" "${DATADIR}/auto.json" \
-          "${DATADIR}/auto.last" "${DATADIR}/videoprobe.json" "${DATADIR}/job.json" "${DATADIR}/eq.json"
+          "${DATADIR}/auto.last" "${DATADIR}/videoprobe.json" "${DATADIR}/job.json" "${DATADIR}/eq.json" "${DATADIR}/eq.lock"
     rmdir "${DATADIR}/backups/videos" 2>/dev/null || true
     rmdir "${DATADIR}/backups" 2>/dev/null || true
     if ! rmdir "${DATADIR}" 2>/dev/null; then
