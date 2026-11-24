@@ -23,14 +23,14 @@
     "settings": {
         "AudioLeveler_target": {
             "description": "Loudness",
-            "tip": "Every song is brought to this loudness. Use FPP's volume to set how loud the show plays overall. -14 LUFS suits most shows; go louder for an FM transmitter, quieter for a more natural sound with more headroom. The table under this shows what each choice means for your songs.",
+            "tip": "How loud every song is made, so they all match. FPP's volume sets how loud the show plays. -14 suits most shows, FM included.",
             "type": "select",
             "options": {
-                "-18 LUFS (quietest, most headroom)": "-18",
-                "-16 LUFS (quieter, more headroom)": "-16",
+                "-18 LUFS (quiet)": "-18",
+                "-16 LUFS": "-16",
                 "-14 LUFS (recommended)": "-14",
-                "-12 LUFS (louder)": "-12",
-                "-10 LUFS (loud, for FM transmitters)": "-10"
+                "-12 LUFS (loud)": "-12",
+                "-10 LUFS (very loud; many songs land short)": "-10"
             },
             "default": "-14",
             "labelClass": "col-12",
@@ -38,7 +38,7 @@
         },
         "AudioLeveler_ceiling": {
             "description": "Peak ceiling",
-            "tip": "The loudest peak allowed, so nothing clips or distorts. FM transmitters boost treble before sending, so peaks close to full scale can distort on air; -1.5 (FPP's Normalize uses the same) leaves room for that.",
+            "tip": "The loudest a peak may get, so nothing distorts. -1.5 leaves room for FM transmitters, which boost treble.",
             "type": "select",
             "options": {
                 "-0.5 dBTP": "-0.5",
@@ -52,7 +52,7 @@
         },
         "AudioLeveler_match": {
             "description": "Match songs by",
-            "tip": "Most shows play over FM, to car radios and porch radios, or through outdoor speakers, and those barely reproduce deep bass, so a bass-heavy song can measure on target yet sound quieter. This matching (the same method as FPP's Normalize, which calls it Show speakers / FM) nudges each song's target by up to 4 dB to make up for it. Songs measured before you turn this on need measuring again.",
+            "tip": "Radios and small speakers barely play deep bass, so bass-heavy songs sound quieter. This nudges each song by up to 4 dB to make up for it, as FPP's Normalize does.",
             "type": "select",
             "options": {
                 "How they sound on show speakers / FM (recommended)": "speakers",
@@ -64,7 +64,7 @@
         },
         "AudioLeveler_bgOffset": {
             "description": "Background level",
-            "tip": "For songs set to Background in the Fix column, like ambiance and off-hours music: heard, but under the show.",
+            "tip": "How far under the show songs set to Background play, like ambiance or off-hours music.",
             "type": "select",
             "options": {
                 "6 dB under the show": "6",
@@ -78,7 +78,7 @@
         },
         "AudioLeveler_allowLimiter": {
             "description": "Use the limiter for songs Normalize leaves short",
-            "tip": "FPP's Normalize never turns a song up past where its peaks would distort, so a quiet song with sharp peaks can end up a little under the target. With this on, those songs get Audio Leveler's gentle 4x-oversampled limiter instead, which brings them all the way up but rewrites the file (the original is kept as a backup). Off, files are never changed and those songs simply land a little quieter. You can also pick Limiter for a single song in its Fix column.",
+            "tip": "Normalize won't turn a song up past where its peaks would distort, so a few land a little quiet. On: those get the limiter instead (the file is rewritten; the original is backed up).",
             "type": "checkbox",
             "default": "0",
             "labelClass": "col-10",
@@ -86,7 +86,7 @@
         },
         "AudioLeveler_lossless": {
             "description": "Lossless volume change for MP3s",
-            "tip": "Like MP3Gain: changes an MP3's volume in steps of about 1.5 dB (1.505 dB) without re-encoding, so there's no quality loss at all. Used whenever a song only needs turning up or down. Songs that need the limiter or compression, and other formats, are re-encoded at top quality (MP3 at 320 kbps).",
+            "tip": "Changes an MP3's volume in steps of about 1.5 dB without re-encoding, like MP3Gain. Other changes re-encode at top quality.",
             "type": "checkbox",
             "default": "1",
             "labelClass": "col-10",
@@ -94,7 +94,7 @@
         },
         "AudioLeveler_autoLevel": {
             "description": "Level new uploads automatically",
-            "tip": "Handles songs and videos added or changed after you switch this on (an upload from xLights, say). It checks when FPP starts, whenever a playlist stops, and when you open this page, then measures them and applies each one's fix once no show is playing. Ones set to Skip are left alone, and a file that's still uploading waits for the next check.",
+            "tip": "Measures and levels songs and videos added or replaced after you turn this on, once no show is playing. Songs set to Skip are left alone.",
             "type": "checkbox",
             "default": "0",
             "labelClass": "col-10",
@@ -102,7 +102,7 @@
         },
         "AudioLeveler_backup": {
             "description": "Keep originals so they can be restored",
-            "tip": "Keeps the original of each song or video the first time it's changed, in plugindata/AudioLeveler/backups.",
+            "tip": "Keeps each original the first time it's changed, so Restore can put it back.",
             "type": "checkbox",
             "default": "1",
             "labelClass": "col-10",
@@ -110,7 +110,7 @@
         },
         "AudioLeveler_waitIdle": {
             "description": "Wait until no show is playing",
-            "tip": "When off, work runs at low priority during the show, but a song is never replaced while it is playing.",
+            "tip": "Off: work runs at low priority during the show. A playing song is never replaced.",
             "type": "checkbox",
             "default": "1",
             "labelClass": "col-10",

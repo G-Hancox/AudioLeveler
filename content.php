@@ -25,6 +25,13 @@ function AudioLevelerPrintSetting($name)
     }
     PrintPluginSetting(AUDIOLEVELER_PLUGIN, $name, 'audioLevelerSettingSaved');
 }
+
+// A "?" with a tip, drawn the way FPP draws the ones beside its settings.
+function AudioLevelerHelp($tip)
+{
+    echo '<span data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="auto" data-bs-title="' .
+        htmlspecialchars($tip, ENT_QUOTES) . '"><img src="images/redesign/help-icon.svg" class="icon-help" alt="Help"></span>';
+}
 ?>
 <div id="audioLeveler" class="mt-2">
 
@@ -48,9 +55,8 @@ function AudioLevelerPrintSetting($name)
                 </div>
                 <div class="card-body">
                     <?php if (AudioLevelerPlaybackGainSupported()) { ?>
-                    <div class="alert alert-info small py-2 mb-3">Leveling is done by FPP's own <b>Normalize</b>, so songs that only need a volume change are left exactly as uploaded.
-                        Audio Leveler shows you what it did, suggests what might sound better, and adds what Normalize doesn't:
-                        Background levels, automatic leveling of new uploads, and the limiter when you want it.</div>
+                    <p class="small text-body-secondary mb-2">Uses FPP's <b>Normalize</b>
+                        <?php AudioLevelerHelp("FPP's own Normalize does the leveling, so songs that only need a volume change are left exactly as uploaded. Audio Leveler shows what it did and adds Background levels, automatic leveling of new uploads and an optional limiter."); ?></p>
                     <?php } ?>
                     <!-- Settings are FPP's own setting rows (settings.json), saved as
                          soon as they change; audioLevelerSettingSaved() refreshes the page. -->
@@ -60,8 +66,8 @@ function AudioLevelerPrintSetting($name)
 
                     <!-- Target advisor: what each target would mean for these songs -->
                     <div id="alAdvisor" class="mb-3 d-none al-adv">
-                        <div class="small fw-semibold mb-1">What each target means for your songs</div>
-                        <div class="form-text mt-0 mb-1">Tap a level to use it.</div>
+                        <div class="small fw-semibold mb-1">What each level means for your songs
+                            <?php AudioLevelerHelp('How many of your measured songs reach each level with just a volume change, need the limiter, or would land a little quieter. Tap a level to use it.'); ?></div>
                         <div class="table-responsive">
                             <table class="table table-sm small align-middle mb-1">
                                 <thead>
@@ -86,20 +92,6 @@ function AudioLevelerPrintSetting($name)
                         ?>
                     </div>
 
-                    <div class="al-adv">
-                    <div class="fw-semibold mb-1">Fixes</div>
-                    <div class="form-text mt-0 mb-1">Each song uses the fix shown in its <i>Fix</i> column. Every song starts on <b>Recommended</b>;
-                        pick another for any song, or tick several and use <b>Set fix</b>.</div>
-                    <ul class="form-text ps-3 mb-3">
-                        <li><b>Recommended</b>: the gentlest fix that does the job. A plain volume change (lossless for MP3s) whenever it's enough,
-                            the limiter only when it takes 3 dB or less of peak trimming, and otherwise volume only, landing a little quieter
-                            rather than squashing the song. Never compresses on its own.</li>
-                        <li><b>Volume only</b> (shown as <b>Normalize</b> on FPP 10.4 and later, where FPP's Normalize does it without touching the file): just turns the song up or down. Never changes the sound, but a quiet song with big peaks may not reach the target.</li>
-                        <li><b>Limiter</b>: turns the song up or down and gently catches the peaks, so it hits the target without clipping.</li>
-                        <li><b>Compression</b>: also evens out quiet intros and loud choruses. Good outdoors or over FM, where quiet parts get lost.</li>
-                        <li><b>Background</b>: deliberately under the show, by the Background level above. <b>Skip</b>: left alone.</li>
-                    </ul>
-                    </div>
 
                     <div class="settingsTable container-fluid px-0">
                         <?php
@@ -120,8 +112,8 @@ function AudioLevelerPrintSetting($name)
                         AudioLevelerPrintSetting('AudioLeveler_backup');
                         ?>
                     </div>
-                    <div class="form-text al-simple-only">More settings (peak ceiling, matching, Background level, the limiter, backups and
-                        what each target means for your songs) are under <b>Advanced</b>. The defaults suit most shows, including FM.</div>
+                    <div class="form-text al-simple-only">More under <b>Advanced</b>
+                        <?php AudioLevelerHelp('Peak ceiling, song matching, Background level, the limiter, backups and what each level means for your songs. The defaults suit most shows, including FM.'); ?></div>
                 </div>
             </div>
         </div>
@@ -211,6 +203,7 @@ function AudioLevelerPrintSetting($name)
                             <option value="background">Background</option>
                             <option value="skip">Skip</option>
                         </select>
+                        <?php AudioLevelerHelp('<b>Recommended</b>: the gentlest fix that works (usually just volume). <b>Volume only</b> / <b>Normalize</b>: turns it up or down, never changes the sound. <b>Limiter</b>: catches the peaks so it reaches the level. <b>Compression</b>: also evens out quiet and loud parts. <b>Background</b>: under the show, by the Background level. <b>Skip</b>: left alone.'); ?>
                         <button id="alLevelSel" type="button" class="buttons btn btn-sm btn-success" disabled>Level selected</button>
                         <button id="alRestoreSel" type="button" class="buttons btn btn-sm btn-outline-secondary" disabled>Restore originals</button>
                     </div>
@@ -224,7 +217,7 @@ function AudioLevelerPrintSetting($name)
                                     <th scope="col" class="text-end"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="lufs">Loudness <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="text-end d-none d-sm-table-cell"><button type="button" class="al-sort btn btn-link p-0 fw-semibold text-reset text-decoration-none" data-sort="peak">Peak <span class="al-sort-icon text-body-secondary"></span></button></th>
                                     <th scope="col" class="d-none d-lg-table-cell">Status</th>
-                                    <th scope="col" class="d-none d-lg-table-cell">Fix</th>
+                                    <th scope="col" class="d-none d-lg-table-cell">Fix <?php AudioLevelerHelp('<b>Recommended</b>: the gentlest fix that works (usually just volume). <b>Volume only</b> / <b>Normalize</b>: turns it up or down, never changes the sound. <b>Limiter</b>: catches the peaks so it reaches the level. <b>Compression</b>: also evens out quiet and loud parts. <b>Background</b>: under the show, by the Background level. <b>Skip</b>: left alone.'); ?></th>
                                     <th scope="col" class="text-end d-none d-sm-table-cell"></th>
                                 </tr>
                             </thead>

@@ -478,11 +478,15 @@
             var t = ceiling - r.TP + r.I - speakerDelta(f);
             if (t < limit) { limit = t; by = displayName(f); }
         });
-        $id('alAdvisorNote').textContent = isFinite(limit)
-            ? 'Up to ' + (Math.floor(limit * 2) / 2).toFixed(1) + ' LUFS, every show song lands right on its target with a plain volume change' +
-              (by ? ' (the first to need help above that is ' + by + ').' : '.') +
-              ' Above it, a song a little short of headroom is left up to 1 dB quieter instead of limited.' +
-              ' Counts use each song\'s recommended fix' + (options.match !== 'lufs' ? ' and speaker matching' : '') + '.'
+        // One short line; the rest is in the note's own tip.
+        var note = $id('alAdvisorNote');
+        note.textContent = isFinite(limit)
+            ? 'Every song fits with just volume up to ' + (Math.floor(limit * 2) / 2).toFixed(1) + ' LUFS.'
+            : '';
+        note.title = isFinite(limit)
+            ? (by ? 'The first song to need help above that is ' + by + '. ' : '') +
+              'Above it, a song a little short of headroom is left up to 1 dB quieter instead of limited. Counts use each song\'s recommended fix' +
+              (options.match !== 'lufs' ? ' and speaker matching' : '') + '.'
             : '';
     }
 
@@ -1094,6 +1098,13 @@
     }
 
     function init() {
+        // The ? tips: FPP sets up tooltips when its pages load; make sure these
+        // are too, on FPP versions that don't.
+        if (window.bootstrap && bootstrap.Tooltip) {
+            document.querySelectorAll('#audioLeveler [data-bs-toggle="tooltip"]').forEach(function (el) {
+                bootstrap.Tooltip.getOrCreateInstance(el);
+            });
+        }
         if (!$id('audioLeveler')) { return; }
         var view = 'simple';
         try { view = localStorage.getItem('audioLeveler.view') || 'simple'; } catch (e) { /* no storage */ }
