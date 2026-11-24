@@ -595,7 +595,7 @@
     // Switch between the Songs and Videos lists. The selection and filter
     // start fresh: each tab is its own list.
     function setTab(name, quiet) {
-        if (tab === 'eq' && name !== 'eq') { eqRevertIfDirty(false); }
+        if (tab === 'eq' && name !== 'eq') { eqLeave(); }
         tab = name;
         if (name !== 'info' && name !== 'eq') {
             try { localStorage.setItem('audioLeveler.tab', name); } catch (e) { /* no storage */ }
@@ -1271,7 +1271,7 @@
     // Before), and otherwise the EQ FPP plays with when it's on.
     function applyEqToPlayer() {
         if (!player.eqNodes) { return; }
-        var g = (tab === 'eq' || eq.on) ? eqPlaybackGains() : [0, 0, 0, 0, 0];
+        var g = (eq.on || (tab === 'eq' && eq.mode === 'try')) ? eqPlaybackGains() : [0, 0, 0, 0, 0];
         player.eqNodes.forEach(function (f, i) { f.gain.value = g[i]; });
     }
 
@@ -1401,11 +1401,14 @@
 
     /* ---------------- Audio EQ tab ----------------
        A front end for FPP's own equalizer: FPP's five EQ bands on the show's
-       sound card (Audio Output Groups, FPP 10.4+). Presets only cut, so the
-       transmitter never gets a hotter signal. Sliders change the running EQ
-       at once (FPP's live update) and are kept with Save; leaving with
-       unsaved changes puts the saved EQ back. The meter reads the song the
-       player is playing, with its Normalize setting and this EQ applied. */
+       sound card (Audio Output Groups, FPP 10.4+). A three-way switch:
+       Off (FPP untouched, the tab greyed out), Try it (in the browser only)
+       and In the show (FPP's audio switched to Advanced with this EQ; out of
+       it, FPP is put back as it was). In the show, sliders change the running
+       EQ at once (FPP's live update) and are kept with Save; leaving the tab
+       puts the saved EQ back, stops the test song and turns Try it off. The
+       meter reads the song the player is playing, with its Normalize setting
+       and this EQ applied. */
 
     var EQ_FREQS = ['60 Hz', '250 Hz', '1 kHz', '4 kHz', '12 kHz'];
     // [type, frequency, Q] of FPP's five default bands, for the browser's copy of the EQ.
@@ -1422,18 +1425,20 @@
     ];
     var EQ_WARNINGS =
         '<b>Before you use the EQ</b><ul class="mb-0 ps-3 text-start">' +
-        '<li><b>Ticking it switches FPP\'s audio to Advanced (Full PipeWire)</b> with your show\'s sound card, and needs a reboot. ' +
-        '<b>Unticking puts FPP\'s audio settings back exactly as they were</b> (another reboot); your EQ is remembered for next time.</li>' +
-        '<li><b>Turning it on or off, and Save, restart FPP\'s audio</b>, which stops anything playing. It won\'t while a show is running.</li>' +
+        '<li><b>Try it</b> is in your browser only: nothing on FPP or the transmitter changes. Leaving this tab turns it off.</li>' +
+        '<li><b>In the show switches FPP\'s audio to Advanced (Full PipeWire)</b> with your show\'s sound card, and needs a reboot. ' +
+        '<b>Going back to Try it or Off puts FPP\'s audio settings back exactly as they were</b> (another reboot); your EQ is remembered for next time.</li>' +
+        '<li><b>Switching In the show in or out, and Save to FPP, restart FPP\'s audio</b>, which stops anything playing. It won\'t while a show is running.</li>' +
         '<li><b>Raising a slider makes the signal hotter.</b> Too hot overdrives an FM transmitter: distortion, and RDS can drop out. ' +
         'The presets only cut; if you push sliders up, watch the meter.</li>' +
         '<li>Some presets make the show a little quieter overall: turn FPP\'s volume up a touch if needed.</li>' +
         '<li><b>It changes everything FPP plays through this sound card</b>, every song and video, not one song.</li>' +
-        '<li><b>Slider changes play live but aren\'t kept until Save.</b> Leave without saving and the saved EQ comes back.</li>' +
+        '<li><b>Slider changes play live but aren\'t kept until you save.</b> Leave without saving and the saved EQ comes back.</li>' +
         '<li>These are FPP\'s own EQ settings (Audio Output Groups), so changes show there too.</li></ul>';
 
     var eq = {
-        loaded: false, supported: false, on: false, gains: [0, 0, 0, 0, 0], saved: [0, 0, 0, 0, 0], preset: 'flat',
+        loaded: false, supported: false, on: false, mode: 'off', pendingMode: null, presets: [], delAsk: -1,
+        gains: [0, 0, 0, 0, 0], saved: [0, 0, 0, 0, 0], preset: 'flat',
         rebootPending: false, cardName: '', kfmt: false, after: true, confirming: false, busy: false,
         showRunning: false, liveTimer: null, liveSent: '', tx: null, txTimer: null, statusTimer: null
     };
@@ -1453,6 +1458,10 @@
             if (!eqDirty()) { eq.gains = (j.gains || [0, 0, 0, 0, 0]).slice(); }
             eq.saved = (j.gains || [0, 0, 0, 0, 0]).slice();
             eq.preset = j.preset || 'flat';
+            eq.presets = j.presets || [];
+            // In the show is FPP's own setting; Try it lives only on this page.
+            if (eq.on) { eq.mode = 'show'; } else if (eq.mode === 'show') { eq.mode = 'off'; }
+            applyEqToPlayer();
             renderEq();
         }).catch(function (e) { toast(e.message, false); });
     }
@@ -1464,11 +1473,23 @@
             el.innerHTML =
                 '<div id="alEqStatus" class="d-flex flex-wrap align-items-center gap-2 rounded border bg-body-tertiary px-3 py-2 mb-3"></div>' +
                 '<div id="alEqConfirm" class="alert alert-warning small d-none"></div>' +
-                '<div id="alEqBody">' +
+                '<fieldset id="alEqBody" class="al-eq-body">' +
+                '<div id="alEqOffNote" class="small text-body-secondary mb-2 d-none">Pick <b>Try it</b> to adjust the EQ and hear it here in your browser.</div>' +
                 '<div class="small fw-semibold text-body-secondary text-uppercase mb-1">Presets</div>' +
                 '<div id="alEqPresets" class="d-flex flex-wrap gap-2 mb-3">' + EQ_PRESETS.map(function (p) {
                     return '<button type="button" class="buttons btn btn-sm btn-outline-secondary" data-preset="' + p[0] + '">' + p[1] + '</button>';
                 }).join('') + '</div>' +
+                '<div class="small fw-semibold text-body-secondary text-uppercase mb-1">My presets</div>' +
+                '<div class="d-flex flex-wrap align-items-center gap-2 mb-3">' +
+                '<span id="alEqMine" class="d-flex flex-wrap gap-2"></span>' +
+                '<button id="alEqMineAdd" type="button" class="btn btn-sm btn-outline-primary">+ Save as preset</button>' +
+                '<span id="alEqMineForm" class="d-none align-items-center gap-2">' +
+                '<input id="alEqMineName" type="text" class="form-control form-control-sm" maxlength="30" style="width:14rem" ' +
+                'placeholder="Name, e.g. Old Radio (mine)" aria-label="Preset name">' +
+                '<button id="alEqMineSave" type="button" class="buttons btn btn-sm btn-success">Save preset</button>' +
+                '<button id="alEqMineCancel" type="button" class="btn btn-sm btn-link">Cancel</button></span>' +
+                '<span id="alEqMineFull" class="small text-body-secondary d-none">8 saved: delete one to add another.</span>' +
+                '</div>' +
                 '<div class="row g-3">' +
                 '<div class="col-12 col-lg-7"><div class="rounded border p-3 h-100">' +
                 '<div class="d-flex flex-wrap align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase me-auto">Equalizer (dB)</span>' +
@@ -1481,7 +1502,7 @@
                         '<input type="range" class="form-range al-eq-slider" min="-12" max="12" step="0.5" data-band="' + i + '" aria-label="' + f + ' gain in dB">' +
                         '<span class="small text-body-secondary">' + f + '</span></div>';
                 }).join('') + '</div>' +
-                '<div class="form-text">Presets only cut, so the transmitter never gets a hotter signal. Changes play live; <b>Save</b> keeps them.</div>' +
+                '<div id="alEqHint" class="form-text"></div>' +
                 '<div class="d-flex gap-2 justify-content-end mt-2">' +
                 '<button id="alEqUndo" type="button" class="btn btn-sm btn-outline-secondary">Undo</button>' +
                 '<button id="alEqSave" type="button" class="buttons btn btn-sm btn-success">Save</button></div>' +
@@ -1502,34 +1523,62 @@
                 '<select id="alEqSong" class="form-select form-select-sm w-auto" aria-label="Song to test the EQ with"></select>' +
                 '<button id="alEqPlay" type="button" class="buttons btn btn-sm btn-outline-success"><i class="fas fa-fw fa-play"></i> Play</button>' +
                 '<span class="small text-body-secondary">The player below has Stop, Next and <b>Play through the show</b>, to hear it on your speakers and FM.</span>' +
-                '</div></div>';
+                '</div></fieldset>';
             wireEq();
         }
-        // Status strip
+        // Status strip: the three-way switch and where things stand
         var st = $id('alEqStatus');
         if (!eq.loaded) {
             st.innerHTML = '<span class="text-body-secondary">Loading&hellip;</span>';
-        } else if (!eq.supported) {
-            st.innerHTML = '<span class="text-body-secondary">This FPP has no equalizer. It needs FPP 10.4 or later. ' +
-                'You can still try the presets here in your browser.</span>';
         } else {
-            st.innerHTML =
-                '<span class="rounded-circle d-inline-block" style="width:.6rem;height:.6rem;background:' + (eq.on ? 'var(--bs-success)' : 'var(--bs-secondary)') + '"></span>' +
-                '<b>' + (eq.rebootPending ? 'Reboot FPP to finish' : eq.on ? 'Equalizer on' : 'Equalizer off') + '</b>' +
-                '<span class="text-body-secondary small">' + (eq.cardName ? 'Shaping <b class="text-body">' + esc(eq.cardName) + '</b>' : '') +
-                (eq.rebootPending ? ' &middot; use the Reboot button at the top of FPP' : '') +
-                (!eq.on && !eq.rebootPending ? ' &middot; the presets play here in your browser until you tick it' : '') + '</span>' +
-                '<span class="form-check ms-auto mb-0"><input id="alEqOn" class="form-check-input" type="checkbox"' + (eq.on ? ' checked' : '') +
-                (eq.busy || eq.showRunning ? ' disabled' : '') + '> <label class="form-check-label ms-2" for="alEqOn">EQ on</label></span>' +
-                helpIconHtml(EQ_WARNINGS);
-            var box = $id('alEqOn');
-            if (box) {
-                box.addEventListener('change', function () {
-                    this.checked = eq.on;   // nothing changes until it's confirmed
-                    eqAskToggle();
-                });
+            var lock = eq.busy || eq.showRunning;   // switching In the show in or out restarts FPP's audio
+            var seg = function (m, label, title, disabled) {
+                return '<button type="button" class="btn btn-outline-secondary' + (eq.mode === m ? ' active' : '') + '" data-eqmode="' + m + '"' +
+                    ' aria-pressed="' + (eq.mode === m ? 'true' : 'false') + '" title="' + esc(title) + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
+            };
+            var msg;
+            if (eq.mode === 'show') {
+                msg = eq.rebootPending ? '<b>In the show: reboot FPP to finish</b> &middot; use the Reboot button at the top of FPP'
+                    : '<b>In the show</b>' + (eq.cardName ? ' &middot; shaping <b>' + esc(eq.cardName) + '</b>, on your speakers and FM' : ' &middot; on your speakers and FM');
+            } else if (eq.mode === 'try') {
+                msg = '<b>Trying it in your browser only</b> &middot; not in the show' +
+                    (eq.rebootPending ? ' &middot; <b>reboot FPP to finish putting FPP back</b>' : '');
+            } else {
+                msg = '<b>Off</b> &middot; FPP\'s audio is as you set it' +
+                    (eq.rebootPending ? ' &middot; <b>reboot FPP to finish putting it back</b>' : '');
             }
+            if (!eq.supported) { msg += ' &middot; In the show needs FPP 10.4 or later'; }
+            if (eq.showRunning) { msg += ' &middot; a show is playing, so In the show can\'t be switched now'; }
+            st.innerHTML =
+                '<span class="small fw-semibold text-body-secondary text-uppercase">EQ</span>' +
+                '<span class="btn-group btn-group-sm al-eq-mode" role="group" aria-label="Audio EQ">' +
+                seg('off', 'Off', 'FPP untouched', eq.on && lock) +
+                seg('try', 'Try it', 'In your browser only', eq.on && lock) +
+                seg('show', 'In the show', eq.supported ? 'On your speakers and FM (reboot)' : 'Needs FPP 10.4 or later', !eq.supported || (!eq.on && lock)) +
+                '</span>' + helpIconHtml(EQ_WARNINGS) +
+                '<span class="small text-body-secondary al-eq-msg">' + msg + '</span>';
+            initTips(st);
         }
+        var body = $id('alEqBody');
+        body.disabled = eq.mode === 'off';
+        body.classList.toggle('al-eq-disabled', eq.mode === 'off');
+        $id('alEqOffNote').classList.toggle('d-none', eq.mode !== 'off');
+        $id('alEqHint').innerHTML = eq.mode === 'show'
+            ? 'Changes go out live; <b>Save to FPP</b> keeps them. The presets only cut, so the transmitter never gets a hotter signal.'
+            : 'Here in your browser only. <b>Remember settings</b> keeps them for when you pick In the show. The presets only cut.';
+        $id('alEqSave').textContent = eq.mode === 'show' ? 'Save to FPP' : 'Remember settings';
+        // My presets
+        $id('alEqMine').innerHTML = eq.presets.map(function (p, i) {
+            var on = p.gains.join() === eq.gains.join();
+            return '<span class="btn-group btn-group-sm" role="group">' +
+                '<button type="button" class="buttons btn ' + (on ? 'btn-success' : 'btn-outline-secondary') + '" data-mine="' + i + '" aria-pressed="' + on + '">' + esc(p.name) + '</button>' +
+                '<button type="button" class="btn ' + (eq.delAsk === i ? 'btn-danger' : 'btn-outline-secondary') + '" data-mine-del="' + i + '"' +
+                ' aria-label="Delete ' + esc(p.name) + '" title="Delete">' + (eq.delAsk === i ? 'Delete?' : '&times;') + '</button></span>';
+        }).join('');
+        $id('alEqMine').classList.toggle('d-none', !eq.presets.length);
+        var naming = !$id('alEqMineForm').classList.contains('d-none');
+        $id('alEqMineAdd').classList.toggle('d-none', naming || eq.presets.length >= 8);
+        $id('alEqMineFull').classList.toggle('d-none', naming || eq.presets.length < 8);
         // Presets, sliders, buttons
         var matching = EQ_PRESETS.filter(function (p) { return p[2].join() === eq.gains.join(); })[0];
         Array.prototype.forEach.call(el.querySelectorAll('[data-preset]'), function (b) {
@@ -1550,7 +1599,7 @@
         });
         $id('alEqDirty').classList.toggle('d-none', !eqDirty());
         $id('alEqUndo').disabled = !eqDirty();
-        $id('alEqSave').disabled = !eqDirty() || eq.busy;
+        $id('alEqSave').disabled = !eqDirty() || eq.busy || (eq.mode === 'show' && eq.showRunning);
         $id('alTxWrap').classList.toggle('d-none', !eq.kfmt);
         $id('alTxClear').classList.toggle('d-none', !eq.kfmt);
         // Test songs: the Songs list as it stands
@@ -1578,19 +1627,29 @@
         }
     }
 
-    // Ticking or unticking asks first, with what it will do.
-    function eqAskToggle() {
+    // Switching In the show in or out asks first, with what it will do.
+    function eqAskToggle(target) {
         var c = $id('alEqConfirm');
         if (eq.showRunning) { toast('A show is playing. Stop it first: this restarts FPP\'s audio.', false); return; }
+        eq.pendingMode = target;
         c.innerHTML = eq.on
-            ? '<b>Turn the EQ off?</b> FPP\'s audio settings go back exactly as they were before you turned it on, then FPP needs a reboot. ' +
-              'Your EQ is remembered for next time. <div class="mt-2"><button type="button" class="btn btn-sm btn-warning" data-eq-confirm="off">Turn it off</button> ' +
+            ? '<b>Take the EQ out of the show?</b> FPP\'s audio settings go back exactly as they were before, then FPP needs a reboot. ' +
+              'Your EQ is remembered for next time' + (target === 'try' ? ', and you can keep trying it here in your browser' : '') + '.' +
+              ' <div class="mt-2"><button type="button" class="btn btn-sm btn-warning" data-eq-confirm="off">Put FPP back</button> ' +
               '<button type="button" class="btn btn-sm btn-link" data-eq-confirm="cancel">Cancel</button></div>'
-            : '<b>Turn the EQ on?</b> FPP\'s audio switches to Advanced (Full PipeWire) with the same sound card' +
+            : '<b>Put the EQ in the show?</b> FPP\'s audio switches to Advanced (Full PipeWire) with the same sound card' +
               (eq.cardName ? ' (' + esc(eq.cardName) + ')' : '') + ' and this EQ on it, then FPP needs a reboot. ' +
-              'Untick it any time to put everything back. <div class="mt-2"><button type="button" class="btn btn-sm btn-warning" data-eq-confirm="on">Turn it on</button> ' +
+              'Pick Try it or Off any time to put everything back. <div class="mt-2"><button type="button" class="btn btn-sm btn-warning" data-eq-confirm="on">Put it in the show</button> ' +
               '<button type="button" class="btn btn-sm btn-link" data-eq-confirm="cancel">Cancel</button></div>';
         c.classList.remove('d-none');
+    }
+
+    function eqSaveMine(list, done) {
+        return api('POST', 'eq/presets', { presets: list }).then(function (j) {
+            eq.presets = j.presets || [];
+            if (done) { toast(done); }
+            renderEq();
+        }).catch(function (ex) { toast(ex.message, false); });
     }
 
     function eqSendLive(force) {
@@ -1618,6 +1677,42 @@
     function wireEq() {
         var el = $id('alEqPanel');
         el.addEventListener('click', function (e) {
+            var m = e.target.closest('[data-eqmode]');
+            if (m) {
+                var to = m.getAttribute('data-eqmode');
+                if (to === eq.mode) { return; }
+                $id('alEqConfirm').classList.add('d-none');
+                if (to === 'show' || eq.on) { eqAskToggle(to); return; }
+                // Off and Try it are only this page.
+                eq.mode = to;
+                if (to === 'off') {
+                    if (player.name) { stopPlayer(); }
+                    eq.gains = eq.saved.slice();
+                }
+                applyEqToPlayer();
+                renderEq();
+                return;
+            }
+            var mine = e.target.closest('[data-mine]');
+            if (mine) {
+                var mp = eq.presets[+mine.getAttribute('data-mine')];
+                if (mp) { eq.preset = 'mine'; eqSetGains(mp.gains.slice()); }
+                return;
+            }
+            var del = e.target.closest('[data-mine-del]');
+            if (del) {
+                var di = +del.getAttribute('data-mine-del');
+                if (eq.delAsk !== di) {
+                    eq.delAsk = di;
+                    renderEq();
+                    setTimeout(function () { if (eq.delAsk === di) { eq.delAsk = -1; renderEq(); } }, 3000);
+                    return;
+                }
+                eq.delAsk = -1;
+                var gone = eq.presets[di];
+                eqSaveMine(eq.presets.filter(function (x, i) { return i !== di; }), gone ? 'Deleted ' + gone.name + '.' : null);
+                return;
+            }
             var p = e.target.closest('[data-preset]');
             if (p) {
                 var pr = EQ_PRESETS.filter(function (x) { return x[0] === p.getAttribute('data-preset'); })[0];
@@ -1638,12 +1733,14 @@
                 var what = c.getAttribute('data-eq-confirm');
                 $id('alEqConfirm').classList.add('d-none');
                 if (what === 'cancel') { return; }
+                var target = eq.pendingMode;
                 eq.busy = true;
                 renderEq();
                 api('POST', what === 'on' ? 'eq/on' : 'eq/off', what === 'on' ? { gains: eq.gains, preset: eq.preset } : {}).then(function (j) {
                     toast(what === 'on'
-                        ? (j.reboot ? 'The EQ is set up. Reboot FPP to finish (Reboot button at the top).' : 'The EQ is on.')
-                        : (j.reboot ? 'FPP\'s audio settings are back as they were. Reboot FPP to finish.' : 'The EQ is off.'));
+                        ? (j.reboot ? 'The EQ is set up for the show. Reboot FPP to finish (Reboot button at the top).' : 'The EQ is in the show.')
+                        : (j.reboot ? 'FPP\'s audio settings are back as they were. Reboot FPP to finish.' : 'The EQ is out of the show.'));
+                    if (what === 'off') { eq.mode = target === 'try' ? 'try' : 'off'; }
                 }).catch(function (ex) { toast(ex.message, false); }).then(function () {
                     eq.busy = false;
                     return loadEq();
@@ -1663,7 +1760,7 @@
             renderEq();
             api('POST', 'eq/save', { gains: eq.gains, preset: eq.preset }).then(function (j) {
                 eq.saved = eq.gains.slice();
-                toast(j.applied ? 'EQ saved in FPP.' : 'EQ saved. It goes on FPP when you tick EQ on.');
+                toast(j.applied ? 'EQ saved to FPP.' : 'Settings remembered. They go to FPP when you pick In the show.');
             }).catch(function (ex) { toast(ex.message, false); }).then(function () { eq.busy = false; renderEq(); });
         });
         $id('alEqPlay').addEventListener('click', function () {
@@ -1671,6 +1768,30 @@
             if (!n) { return; }
             var list = Array.prototype.map.call($id('alEqSong').options, function (o) { return o.value; });
             if (player.name === n) { stopPlayer(); } else { play(n, list); }
+        });
+        var mineForm = function (open) {
+            $id('alEqMineForm').classList.toggle('d-none', !open);
+            $id('alEqMineForm').classList.toggle('d-flex', open);
+            if (open) { $id('alEqMineName').value = ''; $id('alEqMineName').focus(); }
+            renderEq();
+        };
+        $id('alEqMineAdd').addEventListener('click', function () { mineForm(true); });
+        $id('alEqMineCancel').addEventListener('click', function () { mineForm(false); });
+        var saveMine = function () {
+            var name = $id('alEqMineName').value.trim();
+            if (!name) { $id('alEqMineName').focus(); return; }
+            var list = eq.presets.slice();
+            var same = list.map(function (x) { return x.name.toLowerCase(); }).indexOf(name.toLowerCase());
+            if (same >= 0) { list[same] = { name: list[same].name, gains: eq.gains.slice() }; }
+            else if (list.length >= 8) { toast('You have 8 presets: delete one first.', false); return; }
+            else { list.push({ name: name, gains: eq.gains.slice() }); }
+            mineForm(false);
+            eqSaveMine(list, (same >= 0 ? 'Updated ' : 'Saved ') + name + '.');
+        };
+        $id('alEqMineSave').addEventListener('click', saveMine);
+        $id('alEqMineName').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); saveMine(); }
+            if (e.key === 'Escape') { mineForm(false); }
         });
         $id('alTxClear').addEventListener('click', function () {
             fetch('/api/plugin-apis/kfmt/clearpeak', { method: 'POST' }).then(pollTx).catch(function () { /* not there */ });
@@ -1707,6 +1828,17 @@
             }).catch(function () { /* fppd down */ });
             pollTx();
         }, 2000);
+    }
+
+    // Leaving the tab: the test song stops, Try it turns off and unsaved
+    // slider moves go back to what was saved. In the show stays as it is.
+    function eqLeave() {
+        eqRevertIfDirty(false);
+        eq.gains = eq.saved.slice();
+        if (eq.mode === 'try') { eq.mode = 'off'; }
+        eq.delAsk = -1;
+        $id('alEqConfirm') && $id('alEqConfirm').classList.add('d-none');
+        if (player.name) { stopPlayer(); }
     }
 
     // Leaving with unsaved changes puts the saved EQ back on FPP.

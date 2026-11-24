@@ -19,6 +19,7 @@
  *   POST   eq/off     put FPP's audio back exactly as it was
  *   POST   eq/live    change the running EQ at once, unsaved   body: {"gains"}
  *   POST   eq/save    keep the EQ (FPP's group, applied; and remembered here)   body: {"gains", "preset"}
+ *   POST   eq/presets your own presets (kept here only)                     body: {"presets": [{"name", "gains"}]}
  *   POST   tagsforget stop flagging songs whose uploaded info differs from what was saved   body: {"files": [...]}
  *   POST   gainsize   the worker grew a song's tag: keep FPP's Normalize setting for it   body: {"file", "oldSize"}
  *   POST   cancel     stop the running job after the current song
@@ -60,6 +61,7 @@ function getEndpointsAudioLeveler()
         array('method' => 'POST', 'endpoint' => 'eq/off', 'callback' => 'AudioLevelerEqOff'),
         array('method' => 'POST', 'endpoint' => 'eq/live', 'callback' => 'AudioLevelerEqLive'),
         array('method' => 'POST', 'endpoint' => 'eq/save', 'callback' => 'AudioLevelerEqSave'),
+        array('method' => 'POST', 'endpoint' => 'eq/presets', 'callback' => 'AudioLevelerEqPresets'),
         array('method' => 'POST', 'endpoint' => 'gainsize', 'callback' => 'AudioLevelerGainSize'),
     );
 }
@@ -1307,7 +1309,51 @@ function AudioLevelerEqData()
     }, range(0, 4));
     $d['preset'] = isset($d['preset']) && is_string($d['preset']) ? $d['preset'] : 'flat';
     $d['on'] = !empty($d['on']);
+    $d['presets'] = AudioLevelerEqCleanPresets(isset($d['presets']) ? $d['presets'] : array());
     return $d;
+}
+
+// Your own presets: up to 8, each a name and five gains.
+function AudioLevelerEqCleanPresets($list)
+{
+    $out = array();
+    if (!is_array($list)) {
+        return $out;
+    }
+    foreach ($list as $p) {
+        if (!is_array($p) || !isset($p['name']) || !is_string($p['name']) || !isset($p['gains']) || !is_array($p['gains'])) {
+            continue;
+        }
+        $name = trim(preg_replace('/[\x00-\x1f<>]/', '', $p['name']));
+        $name = function_exists('mb_substr') ? mb_substr($name, 0, 30, 'UTF-8') : substr($name, 0, 30);
+        if ($name === '') {
+            continue;
+        }
+        $g = array_values($p['gains']);
+        $out[] = array('name' => $name, 'gains' => array_map(function ($i) use ($g) {
+            return isset($g[$i]) && is_numeric($g[$i]) ? max(-12.0, min(12.0, round(floatval($g[$i]) * 2) / 2)) : 0.0;
+        }, range(0, 4)));
+        if (count($out) >= 8) {
+            break;
+        }
+    }
+    return $out;
+}
+
+// POST /api/plugin/AudioLeveler/eq/presets   body: {"presets": [{"name", "gains": [5]}]}
+// Replaces your own presets (the plugin's file only; FPP isn't touched).
+function AudioLevelerEqPresets()
+{
+    $body = AudioLevelerBody();
+    if (!isset($body['presets']) || !is_array($body['presets'])) {
+        return AudioLevelerError(400, 'No presets sent.');
+    }
+    $d = AudioLevelerEqData();
+    $d['presets'] = AudioLevelerEqCleanPresets($body['presets']);
+    if (!AudioLevelerSaveEqData($d)) {
+        return AudioLevelerError(500, 'Couldn\'t save your presets.');
+    }
+    return json(array('status' => 'OK', 'presets' => $d['presets']));
 }
 
 function AudioLevelerSaveEqData($d)
@@ -1401,7 +1447,7 @@ function AudioLevelerEqState()
     AudioLevelerNoCache();
     $d = AudioLevelerEqData();
     $out = array('status' => 'OK', 'supported' => AudioLevelerEqSupported(), 'on' => $d['on'], 'gains' => $d['gains'],
-        'preset' => $d['preset'], 'backend' => AudioLevelerMediaBackend(), 'kfmt' => is_dir(AudioLevelerPluginsDir() . '/fpp-kfmt'));
+        'preset' => $d['preset'], 'presets' => $d['presets'], 'backend' => AudioLevelerMediaBackend(), 'kfmt' => is_dir(AudioLevelerPluginsDir() . '/fpp-kfmt'));
     if (!$out['supported']) {
         return json($out);
     }

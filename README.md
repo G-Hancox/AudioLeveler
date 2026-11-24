@@ -96,11 +96,16 @@ Every row (Songs, Videos and Song info) has a **▶** button. A player bar appea
 
 The **Audio EQ** tab is a front end for FPP 10.4's own 5-band Parametric EQ (the one under Audio/Video Output in Advanced mode), so you can shape the show's sound, for an FM transmitter say, without learning FPP's audio groups. It uses FPP's own bands (60 Hz low shelf, 250 Hz, 1 kHz, 4 kHz, 12 kHz high shelf, ±12 dB) and FPP's own live update, so nothing new runs on the Pi.
 
-- **EQ on** switches FPP's audio to Advanced (Full PipeWire) with the EQ on your sound card, and needs a reboot. **Unticking it puts FPP's audio settings back exactly as they were** (Simple mode, the groups file as it was), with another reboot. If you were already in Advanced mode, it uses your first group's card and leaves the mode alone. The ? beside it has the warnings.
-- **Presets**: FM Clear, Bass Boost, Loudness, Vocal, Rock, Pop, Old Radio and Flat. Sliders change the sound live while the EQ is on; **Save** keeps it (restarting FPP's audio), and leaving the tab without saving puts back what was saved. The plugin remembers your settings while the EQ is off, like any plugin setting; FPP itself is left untouched.
+- A three-way switch, **Off / Try it / In the show**, and the ? beside it has the warnings:
+  - **Off**: FPP is untouched and the tab is greyed out.
+  - **Try it**: the presets, sliders, test song and meter work, in your browser only. Nothing changes on FPP or the transmitter. **Remember settings** keeps them.
+  - **In the show**: switches FPP's audio to Advanced (Full PipeWire) with the EQ on your sound card, and needs a reboot. Slider moves go out live, and **Save to FPP** keeps them. **Going back to Try it or Off puts FPP's audio settings back exactly as they were** (Simple mode, the groups file as it was), with another reboot. If you were already in Advanced mode, it uses your first group's card and leaves the mode alone.
+- Leaving the tab stops the test song, turns Try it off and puts back what was saved. In the show stays as it is.
+- **My presets**: **+ Save as preset** saves the sliders under your own name (up to 8; the same name updates it, × deletes it). They're kept by the plugin, so they survive closing the page and rebooting.
+- **Presets**: FM Clear, Bass Boost, Loudness, Vocal, Rock, Pop, Old Radio and Flat. The plugin remembers your settings while the EQ is off, like any plugin setting; FPP itself is left untouched.
 - **Test song**: plays a song in your browser through the same EQ (Before / After to compare), with an analog-style VU meter (green, yellow, red, and a peak lamp at about −1 dBFS). With K-FMT installed, a **TX** lamp shows the transmitter's own peak reading (read-only).
-- On/off and Save restart FPP's audio, so they're refused while a show is playing. Turning sliders up makes the signal hotter and can overdrive a transmitter; several presets cut more than they boost, so the show may sound a little quieter.
-- Needs FPP 10.4 or later (the tab says so on older versions). Uninstalling the plugin while the EQ is on puts FPP's audio back the same way.
+- Switching In the show in or out, and Save to FPP, restart FPP's audio, so they're refused while a show is playing. Turning sliders up makes the signal hotter and can overdrive a transmitter; several presets cut more than they boost, so the show may sound a little quieter.
+- Needs FPP 10.4 or later (the tab says so on older versions). Uninstalling the plugin while the EQ is in the show puts FPP's audio back the same way.
 
 ## Videos
 

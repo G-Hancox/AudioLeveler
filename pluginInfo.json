@@ -41,7 +41,7 @@
 			},
 			{
 				"kind": "core-settings",
-				"what": "Audio EQ tab, only when ticked: switches FPP's audio to Advanced with its own EQ on your sound card; unticking puts it all back (reboot)."
+				"what": "Audio EQ set to In the show: switches FPP's audio to Advanced with its own EQ on your sound card; switching it out puts it all back (reboot)."
 			},
 			{
 				"kind": "core-settings",

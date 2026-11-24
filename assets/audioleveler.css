@@ -126,3 +126,11 @@
     #alEqPanel .al-eq-db {letter-spacing: -.03em}
 }
 @media (max-width: 575.98px) { #alEqPanel .al-unit {display: none} }
+
+/* Audio EQ: greyed out while the switch is on Off */
+#audioLeveler .al-eq-body { border: 0; padding: 0; margin: 0; min-width: 0; }
+#audioLeveler .al-eq-disabled .al-eq-sliders,
+#audioLeveler .al-eq-disabled .text-uppercase,
+#audioLeveler .al-eq-disabled canvas { opacity: .45; }
+#audioLeveler .al-eq-mode .btn.active { background: var(--bs-success); border-color: var(--bs-success); color: #fff; }
+#audioLeveler .al-eq-msg { flex: 1 1 16rem; }
