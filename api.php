@@ -13,6 +13,7 @@
  *   POST   retime     MP3s that play 25 ms late on FPP back in step   body: {"files": [...]|"all"}
  *   GET    tags       each song's Title and Artist (the Song info tab)
  *   POST   tags       change them                 body: {"edits": {"<song>": {"title", "artist"}}}
+ *   POST   preview    play a song through the show (only while no show is playing), or stop it   body: {"file", "action": "play"|"stop"}
  *   POST   tagsforget stop flagging songs whose uploaded info differs from what was saved   body: {"files": [...]}
  *   POST   gainsize   the worker grew a song's tag: keep FPP's Normalize setting for it   body: {"file", "oldSize"}
  *   POST   cancel     stop the running job after the current song
@@ -48,6 +49,7 @@ function getEndpointsAudioLeveler()
         array('method' => 'GET', 'endpoint' => 'tags', 'callback' => 'AudioLevelerTags'),
         array('method' => 'POST', 'endpoint' => 'tags', 'callback' => 'AudioLevelerSetTags'),
         array('method' => 'POST', 'endpoint' => 'tagsforget', 'callback' => 'AudioLevelerTagsForget'),
+        array('method' => 'POST', 'endpoint' => 'preview', 'callback' => 'AudioLevelerPreview'),
         array('method' => 'POST', 'endpoint' => 'gainsize', 'callback' => 'AudioLevelerGainSize'),
     );
 }
@@ -388,17 +390,23 @@ function AudioLevelerRunCommand($task)
     if (!$known) {
         return false;
     }
+    return AudioLevelerFppCommand(AUDIOLEVELER_START_COMMAND, array($task));
+}
+
+// Run one of fppd's commands; true when fppd answered 200.
+function AudioLevelerFppCommand($command, $args)
+{
     $ctx = stream_context_create(array('http' => array(
         'method' => 'POST',
         'header' => "Content-Type: application/json\r\n",
-        'content' => json_encode(array($task)),
+        'content' => json_encode(array_values($args)),
         'timeout' => 10,
         'ignore_errors' => true,
     )));
     // Read the reply as a stream so its status line comes from the stream's
     // metadata: no $http_response_header, which PHP 8.4+ (FPP on Debian
     // Trixie) deprecates, and the same on every PHP version.
-    $fp = @fopen('http://127.0.0.1/api/command/' . rawurlencode(AUDIOLEVELER_START_COMMAND), 'r', false, $ctx);
+    $fp = @fopen('http://127.0.0.1/api/command/' . rawurlencode($command), 'r', false, $ctx);
     $ok = false;
     $headers = array();
     if ($fp) {
@@ -548,6 +556,7 @@ function AudioLevelerFiles()
         $a = isset($analysis[$name]) ? $analysis[$name] : null;
         if ($a && $a['size'] == $size && $a['mtime'] == $mtime) {
             $row['lufs'] = isset($a['I']) ? $a['I'] : null;
+            $row['dur'] = isset($a['dur']) && $a['dur'] > 0 ? round(floatval($a['dur']), 1) : null;
             $row['peak'] = isset($a['TP']) ? $a['TP'] : null;
             $row['lra'] = isset($a['LRA']) ? $a['LRA'] : null;
             $row['length'] = isset($a['len']) ? $a['len'] : null;
@@ -1159,5 +1168,44 @@ function AudioLevelerTagsForget()
         fclose($lock);
     }
     return json(array('status' => 'OK', 'forgotten' => $n));
+}
+
+// POST /api/plugin/AudioLeveler/preview
+// "Play through the show": plays one song out FPP's own audio (speakers, FM),
+// with its Normalize setting applied, using fppd's Play Media command. Only
+// while no show is playing, checked here so it holds for every browser; the
+// page stops it if a show starts. Playing in the browser needs none of this:
+// it streams the file from FPP's own file API.
+function AudioLevelerPreview()
+{
+    $body = AudioLevelerBody();
+    $name = isset($body['file']) && is_string($body['file']) ? $body['file'] : '';
+    $action = isset($body['action']) ? $body['action'] : '';
+    $isVideo = strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0;
+    $base = $isVideo ? substr($name, strlen(AUDIOLEVELER_VIDEO_PREFIX)) : $name;
+    $dir = $isVideo ? AudioLevelerVideoDir() : AudioLevelerMusicDir();
+    if ($base === '' || strpos($base, '/') !== false || $base[0] === '.' || !is_file("$dir/$base")) {
+        return AudioLevelerError(404, 'That song isn\'t in the folder any more.');
+    }
+    if ($action === 'stop') {
+        AudioLevelerFppCommand('Stop Media', array($base));
+        return json(array('status' => 'OK'));
+    }
+    if ($action !== 'play') {
+        return AudioLevelerError(400, 'Say "play" or "stop".');
+    }
+    $ctx = stream_context_create(array('http' => array('timeout' => 3, 'ignore_errors' => true)));
+    $st = json_decode((string) @file_get_contents('http://127.0.0.1/api/fppd/status', false, $ctx), true);
+    if (!is_array($st) || !isset($st['status_name'])) {
+        return AudioLevelerError(503, 'FPPD isn\'t running, so nothing can play through the show.');
+    }
+    if ($st['status_name'] !== 'idle') {
+        return AudioLevelerError(409, 'A show is playing, so the preview plays in your browser instead. Stop the show to play through it.');
+    }
+    if (!AudioLevelerFppCommand('Play Media', array($base, '1', '0'))) {
+        return AudioLevelerError(502, 'FPP couldn\'t play it. Check FPP\'s log.');
+    }
+    AudioLevelerLog("Playing $name through the show (preview)");
+    return json(array('status' => 'OK'));
 }
 ?>

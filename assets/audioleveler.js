@@ -510,7 +510,7 @@
                 return '<tr' + (selected[f.name] ? ' class="table-active"' : '') + '>' +
                     '<td class="text-center"><input class="form-check-input al-sel" type="checkbox" data-i="' + i + '"' +
                     (selected[f.name] ? ' checked' : '') + ' aria-label="Select ' + esc(f.name) + '"></td>' +
-                    '<td class="text-break al-song">' + songName(f) +
+                    '<td class="text-break al-song">' + playButtonHtml(f.name) + songName(f) +
                     '<div class="d-lg-none mt-1">' + statusHtml(f) + '</div>' +
                     '<div class="d-lg-none mt-1 al-fix-cell">' + fixHtml(f, i) + '</div>' +
                     (restore ? '<div class="d-sm-none mt-1">' + restore + '</div>' : '') + '</td>' +
@@ -960,7 +960,7 @@
                         ' value="' + esc(t[k]) + '" placeholder="' + label + '" aria-label="' + label + ' of ' + esc(f.name) + '"' + (f.editable ? '' : ' disabled') + '>';
                 };
                 return '<div class="row g-2 mx-0 py-2 border-bottom align-items-center al-info-row' + (info.edits[f.name] ? ' al-changed' : '') + '">' +
-                    '<div class="col-12 col-md-4 text-break small">' + esc(f.name) +
+                    '<div class="col-12 col-md-4 text-break small">' + playButtonHtml(f.name) + esc(f.name) +
                     (note ? '<div class="text-' + (f.editable ? 'warning-emphasis' : 'body-secondary') + '">' + esc(note) + '</div>' : '') + replaced + '</div>' +
                     '<div class="col-6 col-md-4">' + input('title', 'Title') + '</div>' +
                     '<div class="col-6 col-md-4 d-flex gap-1">' + input('artist', 'Artist') +
@@ -1083,6 +1083,264 @@
         $id('alInfoSearch').addEventListener('input', function () { info.search = this.value; renderInfo(); });
     }
 
+    /* ---------------- Player ----------------
+       A play button on each row. Songs play here in the browser, streamed
+       from FPP's own file API, with the song's Normalize setting applied
+       (Leveled) or not (Original); or, when "Play through the show" is on and
+       no show is playing, out FPP's own audio via the preview endpoint
+       (fppd's Play Media, which applies Normalize itself). */
+
+    var VIDEO_PREFIX = 'videos/';
+    var player = {
+        name: null,        // what's playing
+        list: [],          // the list it was started from, for Next
+        mode: 'browser',   // or 'show'
+        leveled: true,
+        audio: null, ctx: null, src: null, gain: null,
+        started: 0, dur: 0, // through the show: when it started, how long it is
+        tick: null, poll: null,
+        canShow: false
+    };
+
+    function playFile(name) {
+        return allFiles.filter(function (f) { return f.name === name; })[0] ||
+            info.files.filter(function (f) { return f.name === name; })[0] || { name: name };
+    }
+
+    // The volume FPP's Normalize applies to this song, or null when there's none to hear.
+    function playGainDb(f) {
+        return pgSupported && (!f.video || pgVideos) && typeof f.pbGain === 'number' ? f.pbGain : null;
+    }
+
+    function playUrl(name) {
+        var video = name.indexOf(VIDEO_PREFIX) === 0;
+        var base = video ? name.slice(VIDEO_PREFIX.length) : name;
+        return '/api/file/' + (video ? 'Videos' : 'Music') + '/' + encodeURIComponent(base) + '?play=1';
+    }
+
+    function clock(s) {
+        if (!isFinite(s) || s < 0) { return '0:00'; }
+        s = Math.floor(s);
+        return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+    }
+
+    function playButtonHtml(name) {
+        var on = player.name === name;
+        return '<button type="button" class="btn btn-sm btn-outline-secondary al-play me-1' + (on ? ' active' : '') + '" data-n="' + esc(name) + '"' +
+            ' aria-label="' + (on ? 'Stop ' : 'Play ') + esc(name) + '" title="' + (on ? 'Stop' : 'Listen') + '">' +
+            (on ? '&#9632;' : '&#9654;') + '</button>';
+    }
+
+    function refreshPlayButtons() {
+        Array.prototype.forEach.call(document.querySelectorAll('#audioLeveler .al-play'), function (b) {
+            var on = player.name === b.getAttribute('data-n');
+            b.innerHTML = on ? '&#9632;' : '&#9654;';
+            b.title = on ? 'Stop' : 'Listen';
+            b.setAttribute('aria-label', (on ? 'Stop ' : 'Play ') + b.getAttribute('data-n'));
+            b.classList.toggle('active', on);
+        });
+    }
+
+    function renderPlayer() {
+        var bar = $id('alPlayer');
+        bar.classList.toggle('d-none', !player.name);
+        refreshPlayButtons();
+        if (!player.name) { return; }
+        var f = playFile(player.name);
+        $id('alPlayName').textContent = displayName(f);
+        var show = player.mode === 'show';
+        var g = playGainDb(f);
+        // Leveled / Original only means something for a song FPP's Normalize
+        // turns up or down, and only here in the browser: through the show
+        // FPP always applies it.
+        $id('alPlayMode').classList.toggle('d-none', g === null);
+        Array.prototype.forEach.call($id('alPlayMode').querySelectorAll('button'), function (b) {
+            var on = (b.getAttribute('data-mode') === 'leveled') === player.leveled;
+            b.classList.toggle('active', show ? b.getAttribute('data-mode') === 'leveled' : on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+            b.disabled = show;
+            b.title = show ? 'Through the show it always plays leveled' : (b.getAttribute('data-mode') === 'leveled'
+                ? 'With its Normalize setting (' + (g > 0 ? '+' : '') + (g === null ? 0 : g.toFixed(1)) + ' dB), as the show plays it'
+                : 'The file as uploaded');
+        });
+        var box = $id('alPlayShow');
+        box.checked = show;
+        box.disabled = !show && !player.canShow;
+        box.parentNode.title = box.disabled ? 'A show is playing (or FPPD is stopped), so it plays here in your browser.' : '';
+        $id('alPlaySeek').disabled = show;
+    }
+
+    function updateTime() {
+        var pos = 0, dur = 0;
+        if (player.mode === 'show') {
+            pos = (Date.now() - player.started) / 1000;
+            dur = player.dur;
+        } else if (player.audio) {
+            pos = player.audio.currentTime;
+            dur = player.audio.duration;
+        }
+        $id('alPlayTime').textContent = clock(pos) + (isFinite(dur) && dur > 0 ? ' / ' + clock(dur) : '');
+        if (isFinite(dur) && dur > 0 && document.activeElement !== $id('alPlaySeek')) {
+            $id('alPlaySeek').value = Math.min(1000, Math.round(1000 * pos / dur));
+        }
+        if (player.mode === 'show' && dur > 0 && pos > dur + 1) { stopPlayer(); }
+    }
+
+    function applyGain() {
+        if (!player.gain) { return; }
+        var g = playGainDb(playFile(player.name));
+        player.gain.gain.value = player.leveled && g !== null ? Math.pow(10, g / 20) : 1;
+    }
+
+    function stopSound(tellFpp) {
+        if (player.audio) {
+            player.audio.pause();
+            player.audio.removeAttribute('src');
+            player.audio.load();
+            player.audio = null;
+        }
+        if (player.src) { try { player.src.disconnect(); } catch (e) { /* gone */ } player.src = null; }
+        if (player.gain) { try { player.gain.disconnect(); } catch (e) { /* gone */ } player.gain = null; }
+        if (player.mode === 'show' && player.name && tellFpp !== false) {
+            api('POST', 'preview', { file: player.name, action: 'stop' }).catch(function () { /* stopped anyway */ });
+        }
+        clearInterval(player.tick);
+        player.tick = null;
+    }
+
+    function stopPlayer() {
+        stopSound(true);
+        clearInterval(player.poll);
+        player.poll = null;
+        player.name = null;
+        renderPlayer();
+    }
+
+    function playInBrowser(name) {
+        var C = window.AudioContext || window.webkitAudioContext;
+        var a = new Audio(playUrl(name));
+        a.preload = 'auto';
+        player.audio = a;
+        if (C) {
+            if (!player.ctx) { player.ctx = new C(); }
+            if (player.ctx.state === 'suspended') { player.ctx.resume(); }
+            player.src = player.ctx.createMediaElementSource(a);
+            player.gain = player.ctx.createGain();
+            player.src.connect(player.gain);
+            player.gain.connect(player.ctx.destination);
+            applyGain();
+        }
+        a.addEventListener('timeupdate', updateTime);
+        a.addEventListener('loadedmetadata', updateTime);
+        a.addEventListener('ended', function () { if (player.audio === a) { stopPlayer(); } });
+        a.addEventListener('error', function () {
+            if (player.audio === a) { toast('This file couldn\'t be played in the browser.', false); stopPlayer(); }
+        });
+        a.play().catch(function (e) {
+            if (player.audio === a && e && e.name !== 'AbortError') { toast('Couldn\'t start playing: ' + e.message, false); stopPlayer(); }
+        });
+    }
+
+    function playThroughShow(name) {
+        var f = playFile(name);
+        return api('POST', 'preview', { file: name, action: 'play' }).then(function () {
+            if (player.name !== name || player.mode !== 'show') { return; }
+            player.started = Date.now();
+            player.dur = f.dur || 0;
+            if (!player.dur) {
+                // Not measured yet: read its length from the file's header.
+                var probe = new Audio();
+                probe.preload = 'metadata';
+                probe.addEventListener('loadedmetadata', function () {
+                    if (player.name === name && isFinite(probe.duration)) { player.dur = probe.duration; }
+                    probe.removeAttribute('src');
+                    probe.load();
+                });
+                probe.src = playUrl(name);
+            }
+            player.tick = setInterval(updateTime, 500);
+            updateTime();
+        });
+    }
+
+    // While the bar is up: can it play through the show, and has a show started?
+    function pollShow() {
+        fetch('/api/fppd/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (st) {
+            var idle = st && st.status_name === 'idle';
+            if (player.mode === 'show' && player.name && !idle) {
+                toast('A show started, so the preview stopped.');
+                stopSound(false);
+                player.mode = 'browser';
+                player.name = null;
+            }
+            player.canShow = idle;
+            renderPlayer();
+        }).catch(function () { player.canShow = false; renderPlayer(); });
+    }
+
+    function play(name, list) {
+        stopSound(true);
+        player.name = name;
+        if (list) { player.list = list; }
+        if (player.mode === 'show' && !player.canShow) { player.mode = 'browser'; }
+        $id('alPlaySeek').value = 0;
+        $id('alPlayTime').textContent = '0:00';
+        renderPlayer();
+        if (!player.poll) { player.poll = setInterval(pollShow, 3000); pollShow(); }
+        if (player.mode === 'show') {
+            playThroughShow(name).catch(function (e) {
+                // Refused (a show started, FPPD stopped): play it here instead.
+                toast(e.message, false);
+                player.mode = 'browser';
+                if (player.name === name) { playInBrowser(name); renderPlayer(); }
+            });
+        } else {
+            playInBrowser(name);
+        }
+    }
+
+    function wirePlayer() {
+        // Play buttons are drawn with the rows, on every tab.
+        $id('audioLeveler').addEventListener('click', function (e) {
+            var b = e.target.closest('.al-play');
+            if (!b) { return; }
+            var name = b.getAttribute('data-n');
+            if (player.name === name) { stopPlayer(); return; }
+            var list = tab === 'info'
+                ? Array.prototype.map.call(document.querySelectorAll('#alInfoRows .al-play'), function (x) { return x.getAttribute('data-n'); })
+                : shown.map(function (f) { return f.name; });
+            play(name, list);
+        });
+        $id('alPlayStop').addEventListener('click', stopPlayer);
+        $id('alPlayNext').addEventListener('click', function () {
+            var i = player.list.indexOf(player.name);
+            var next = i >= 0 ? player.list[i + 1] : null;
+            if (next) { play(next); } else { toast('That was the last one in the list.'); stopPlayer(); }
+        });
+        $id('alPlaySeek').addEventListener('input', function () {
+            var a = player.audio;
+            if (a && isFinite(a.duration)) { a.currentTime = a.duration * this.value / 1000; }
+        });
+        $id('alPlayMode').addEventListener('click', function (e) {
+            var b = e.target.closest('[data-mode]');
+            if (!b || player.mode === 'show') { return; }
+            player.leveled = b.getAttribute('data-mode') === 'leveled';
+            applyGain();
+            renderPlayer();
+        });
+        $id('alPlayShow').addEventListener('change', function () {
+            if (!player.name) { return; }
+            player.mode = this.checked ? 'show' : 'browser';
+            play(player.name);   // starts again from the top, the other way
+        });
+        // Leaving the page doesn't leave a song playing through the show.
+        window.addEventListener('pagehide', function () {
+            if (player.mode === 'show' && player.name && navigator.sendBeacon) {
+                navigator.sendBeacon(API + 'preview', JSON.stringify({ file: player.name, action: 'stop' }));
+            }
+        });
+    }
+
     /* ---------------- wiring ---------------- */
 
     // Basic shows the few settings most shows need; Advanced shows all (FPP's UI level names).
@@ -1109,6 +1367,7 @@
         var view = 'simple';
         try { view = localStorage.getItem('audioLeveler.view') || 'simple'; } catch (e) { /* no storage */ }
         setView(view, false);
+        wirePlayer();
         Array.prototype.forEach.call(document.querySelectorAll('[data-al-view]'), function (b) {
             b.addEventListener('click', function () { setView(b.getAttribute('data-al-view'), true); });
         });

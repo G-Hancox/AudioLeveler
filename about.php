@@ -128,6 +128,12 @@
                When the page finds any, a <b>Fix MP3 timing</b> button appears on the Songs tab: it relabels just that tag. The audio, file size and date stay the same.
                Songs Audio Leveler rewrites are always labelled correctly.</p>
 
+            <h6 class="fw-semibold">Listening</h6>
+            <p>Every row has a <b>&#9654;</b> button. A player bar appears at the bottom of the list while it plays, with <b>Stop</b>, <b>Next</b> (to hear
+               how two songs sit side by side) and the time. It plays in your browser by default, safe during a show. <b>Leveled</b> / <b>Original</b>
+               lets you hear a song with and without its Normalize setting. <b>Play through the show</b> plays it out FPP's own speakers and FM exactly as
+               the show will, but only while no show is playing; if a show starts, the preview stops.</p>
+
             <h6 class="fw-semibold">Song info (Title and Artist)</h6>
             <p>The <b>Song info</b> tab shows each song's Title and Artist: what FPP shows while it plays, and what an FM transmitter plugin sends to car
                radios as RDS. <b>Scan for songs</b> (also on the Songs and Videos tabs, as Scan for songs / Scan for videos) picks up files uploaded since the page opened, <b>Fill blanks from file names</b> fills in missing info from names like <i>Artist - Title.mp3</i>, the <b>&#8644;</b> button

@@ -83,6 +83,15 @@ The status column shows which path each song took.
 4. Press **Level all**, or tick songs and press **Level selected**.
 5. Most commercial music is mastered louder than -14 LUFS, so you may need to turn up FPP's volume afterwards.
 
+## Listening
+
+Every row (Songs, Videos and Song info) has a **▶** button. A player bar appears at the bottom of the list while something plays, with **Stop**, **Next** (the next song in the list, to hear how two songs sit side by side), a position bar and the time.
+
+- **In your browser** (the default): the song streams from FPP's own file API, the same way File Manager's Listen does, so it's safe during a show and nothing goes out over FM. Seeking works on FPP 10.4+; on older versions a song plays from the start until it has loaded.
+- **Leveled / Original**: for a song FPP's Normalize turns up or down, **Leveled** applies that same volume in the browser, so it sounds as the show will play it, and **Original** is the file as uploaded. Songs whose file was rewritten (limiter, compression) just play as they are now.
+- **Play through the show**: plays the song out FPP's own audio (your speakers and FM) with fppd's Play Media command, which applies the song's Normalize setting itself, so it's exactly what the show will sound like. It's only allowed while no show is playing (the plugin checks before playing); if a show starts, the preview stops. Through the show it always plays leveled.
+- It plays at your device's volume: it's for comparing songs, not for setting how loud the show is.
+
 ## Videos
 
 The videos in FPP's videos folder get their own **Videos** tab beside **Songs** (it appears once the folder has videos). The two lists are kept separate: each tab has its own numbers and target advisor, switching tabs starts the selection and filter fresh, and **Measure** / **Level all** only work on the tab that's open, so leveling your songs never touches a video and the other way round. A video's sound is measured and leveled the same way as a song, so a video in a playlist plays as loud as the songs around it. Every fix, recommendation, Background, Skip and speaker matching work the same, and automatic leveling covers new videos too.

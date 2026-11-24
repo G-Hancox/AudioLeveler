@@ -93,3 +93,7 @@
 #audioLeveler:not(.al-tab-info) .al-info-only, #audioLeveler.al-tab-info .al-list-only {display:none !important}
 #alInfoPanel .al-tag {min-width: 0}
 #alInfoPanel .al-info-row.al-changed {background-color: var(--bs-warning-bg-subtle)}
+
+/* Player bar: stays in view at the bottom while a song plays */
+#alPlayer.al-player {position: sticky; bottom: 0; z-index: 3; background-color: var(--bs-tertiary-bg)}
+#audioLeveler .al-play {width: 1.75rem; line-height: 1}
