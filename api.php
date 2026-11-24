@@ -14,6 +14,11 @@
  *   GET    tags       each song's Title and Artist (the Song info tab)
  *   POST   tags       change them                 body: {"edits": {"<song>": {"title", "artist"}}}
  *   POST   preview    play a song through the show (only while no show is playing), or stop it   body: {"file", "action": "play"|"stop"}
+ *   GET    eq         the Audio EQ tab's state (FPP's equalizer, FPP 10.4+)
+ *   POST   eq/on      turn FPP's equalizer on (Advanced audio, EQ on the show's card)   body: {"gains", "preset"}
+ *   POST   eq/off     put FPP's audio back exactly as it was
+ *   POST   eq/live    change the running EQ at once, unsaved   body: {"gains"}
+ *   POST   eq/save    keep the EQ (FPP's group, applied; and remembered here)   body: {"gains", "preset"}
  *   POST   tagsforget stop flagging songs whose uploaded info differs from what was saved   body: {"files": [...]}
  *   POST   gainsize   the worker grew a song's tag: keep FPP's Normalize setting for it   body: {"file", "oldSize"}
  *   POST   cancel     stop the running job after the current song
@@ -50,6 +55,11 @@ function getEndpointsAudioLeveler()
         array('method' => 'POST', 'endpoint' => 'tags', 'callback' => 'AudioLevelerSetTags'),
         array('method' => 'POST', 'endpoint' => 'tagsforget', 'callback' => 'AudioLevelerTagsForget'),
         array('method' => 'POST', 'endpoint' => 'preview', 'callback' => 'AudioLevelerPreview'),
+        array('method' => 'GET', 'endpoint' => 'eq', 'callback' => 'AudioLevelerEqState'),
+        array('method' => 'POST', 'endpoint' => 'eq/on', 'callback' => 'AudioLevelerEqOn'),
+        array('method' => 'POST', 'endpoint' => 'eq/off', 'callback' => 'AudioLevelerEqOff'),
+        array('method' => 'POST', 'endpoint' => 'eq/live', 'callback' => 'AudioLevelerEqLive'),
+        array('method' => 'POST', 'endpoint' => 'eq/save', 'callback' => 'AudioLevelerEqSave'),
         array('method' => 'POST', 'endpoint' => 'gainsize', 'callback' => 'AudioLevelerGainSize'),
     );
 }
@@ -109,6 +119,15 @@ function AudioLevelerLogFile()
 // set and removed only through FPP's Normalize (run_normalize.php, the same
 // request the File Manager makes) and read with FPP's own helper, never by
 // touching the file they're kept in.
+function AudioLevelerPluginsDir()
+{
+    global $settings;
+    if (!empty($settings['pluginDirectory'])) {
+        return $settings['pluginDirectory'];
+    }
+    return (isset($settings['mediaDirectory']) ? $settings['mediaDirectory'] : '/home/fpp/media') . '/plugins';
+}
+
 function AudioLevelerFppDir()
 {
     global $settings;
@@ -1171,11 +1190,17 @@ function AudioLevelerTagsForget()
 }
 
 // POST /api/plugin/AudioLeveler/preview
-// "Play through the show": plays one song out FPP's own audio (speakers, FM),
-// with its Normalize setting applied, using fppd's Play Media command. Only
-// while no show is playing, checked here so it holds for every browser; the
-// page stops it if a show starts. Playing in the browser needs none of this:
-// it streams the file from FPP's own file API.
+// "Play through the show": plays one song out FPP's own audio (speakers, FM)
+// as FPP plays a show, with its Normalize setting applied. A song plays as a
+// temporary one-song playlist (AudioLeveler-Preview), so an FM transmitter
+// plugin that mutes between playlists (Kulp's K-FMT, say) comes on and sends
+// the song's title over RDS; a video's sound plays with fppd's Play Media.
+// Only while no show is playing and no scheduled show is due before the song
+// would end (FPP gives a hand-started playlist top priority, so a scheduled
+// one would otherwise wait for it), checked here for every browser. The
+// page stops it if a show starts, and when it leaves.
+define('AUDIOLEVELER_PREVIEW_PLAYLIST', 'AudioLeveler-Preview');
+
 function AudioLevelerPreview()
 {
     $body = AudioLevelerBody();
@@ -1184,28 +1209,424 @@ function AudioLevelerPreview()
     $isVideo = strpos($name, AUDIOLEVELER_VIDEO_PREFIX) === 0;
     $base = $isVideo ? substr($name, strlen(AUDIOLEVELER_VIDEO_PREFIX)) : $name;
     $dir = $isVideo ? AudioLevelerVideoDir() : AudioLevelerMusicDir();
+    if ($action === 'stop') {
+        AudioLevelerPreviewStop($base);
+        return json(array('status' => 'OK'));
+    }
     if ($base === '' || strpos($base, '/') !== false || $base[0] === '.' || !is_file("$dir/$base")) {
         return AudioLevelerError(404, 'That song isn\'t in the folder any more.');
-    }
-    if ($action === 'stop') {
-        AudioLevelerFppCommand('Stop Media', array($base));
-        return json(array('status' => 'OK'));
     }
     if ($action !== 'play') {
         return AudioLevelerError(400, 'Say "play" or "stop".');
     }
-    $ctx = stream_context_create(array('http' => array('timeout' => 3, 'ignore_errors' => true)));
-    $st = json_decode((string) @file_get_contents('http://127.0.0.1/api/fppd/status', false, $ctx), true);
-    if (!is_array($st) || !isset($st['status_name'])) {
+    $st = AudioLevelerFppStatus();
+    if ($st === null) {
         return AudioLevelerError(503, 'FPPD isn\'t running, so nothing can play through the show.');
     }
     if ($st['status_name'] !== 'idle') {
         return AudioLevelerError(409, 'A show is playing, so the preview plays in your browser instead. Stop the show to play through it.');
     }
-    if (!AudioLevelerFppCommand('Play Media', array($base, '1', '0'))) {
+    $analysis = AudioLevelerReadJson(AudioLevelerDataDir() . '/analysis.json', array());
+    $dur = isset($analysis[$name]['dur']) ? floatval($analysis[$name]['dur']) : (isset($body['dur']) ? floatval($body['dur']) : 300);
+    $next = isset($st['scheduler']['nextPlaylist']['scheduledStartTime']) ? intval($st['scheduler']['nextPlaylist']['scheduledStartTime']) : 0;
+    if ($next > 0 && $next - time() < $dur + 90) {
+        return AudioLevelerError(409, 'A scheduled show starts at ' . date('g:i a', $next) . ', before this song would finish, so it plays in your browser instead.');
+    }
+    if ($isVideo) {
+        $ok = AudioLevelerFppCommand('Play Media', array($base, '1', '0'));
+    } else {
+        $pl = array('name' => AUDIOLEVELER_PREVIEW_PLAYLIST, 'desc' => 'Temporary: Audio Leveler preview (removed when it stops)',
+            'repeat' => 0, 'loopCount' => 0, 'random' => 0, 'leadIn' => array(), 'leadOut' => array(),
+            'mainPlaylist' => array(array('type' => 'media', 'enabled' => 1, 'playOnce' => 0, 'fileMode' => 'single', 'mediaName' => $base)));
+        list($code) = AudioLevelerFppApi('POST', 'playlist/' . rawurlencode(AUDIOLEVELER_PREVIEW_PLAYLIST), $pl);
+        $ok = $code === 200 && AudioLevelerFppCommand('Start Playlist', array(AUDIOLEVELER_PREVIEW_PLAYLIST, 'false', 'false', 'false'));
+    }
+    if (!$ok) {
+        AudioLevelerPreviewStop($base);
         return AudioLevelerError(502, 'FPP couldn\'t play it. Check FPP\'s log.');
     }
     AudioLevelerLog("Playing $name through the show (preview)");
-    return json(array('status' => 'OK'));
+    return json(array('status' => 'OK', 'playlist' => $isVideo ? '' : AUDIOLEVELER_PREVIEW_PLAYLIST));
+}
+
+// Stop a preview: the temporary playlist (only if it's still the one
+// playing) and any Play Media of this file; then remove the playlist.
+function AudioLevelerPreviewStop($base)
+{
+    $st = AudioLevelerFppStatus();
+    if ($st && isset($st['current_playlist']['playlist']) && $st['current_playlist']['playlist'] === AUDIOLEVELER_PREVIEW_PLAYLIST) {
+        AudioLevelerFppApi('POST', 'playlists/stop');
+    }
+    if (is_string($base) && $base !== '' && strpos($base, '/') === false) {
+        AudioLevelerFppCommand('Stop Media', array($base));
+    }
+    AudioLevelerFppApi('DELETE', 'playlist/' . rawurlencode(AUDIOLEVELER_PREVIEW_PLAYLIST));
+}
+
+/* ---------------- Audio EQ ----------------
+ * A friendlier front end for FPP's own equalizer (PipeWire Audio Output
+ * Groups, per-card Parametric EQ, FPP 10.4+). Nothing here processes audio:
+ * the plugin only saves FPP's own group settings and switches FPP's own
+ * Media Backend setting, through FPP's own API, exactly as FPP's settings
+ * pages would.
+ *
+ * Turning the EQ on (from Simple audio): the group Simple mode already uses
+ * (one "Default" group, the selected card) is saved as FPP's Advanced group
+ * with the EQ on that card, and Media Backend is set to Advanced; FPP
+ * applies the group itself and asks for a reboot. Turning it off puts FPP's
+ * Advanced group file back exactly as it was (or removes it, when there was
+ * none) and sets Media Backend back. The plugin keeps the EQ gains in its
+ * own data (eq.json) so they come back next time.
+ */
+
+define('AUDIOLEVELER_EQ_BANDS', json_encode(array(
+    array('type' => 'bq_lowshelf', 'freq' => 60, 'q' => 0.7),
+    array('type' => 'bq_peaking', 'freq' => 250, 'q' => 1.0),
+    array('type' => 'bq_peaking', 'freq' => 1000, 'q' => 1.0),
+    array('type' => 'bq_peaking', 'freq' => 4000, 'q' => 1.0),
+    array('type' => 'bq_highshelf', 'freq' => 12000, 'q' => 0.7),
+)));
+
+// FPP's five default EQ bands (its own DefaultEQBands()) with these gains.
+function AudioLevelerEqBands($gains)
+{
+    $bands = json_decode(AUDIOLEVELER_EQ_BANDS, true);
+    foreach ($bands as $i => &$b) {
+        $g = isset($gains[$i]) && is_numeric($gains[$i]) ? floatval($gains[$i]) : 0.0;
+        $b['gain'] = max(-12.0, min(12.0, round($g, 1)));
+    }
+    return $bands;
+}
+
+function AudioLevelerEqData()
+{
+    $d = AudioLevelerReadJson(AudioLevelerDataDir() . '/eq.json', array());
+    $gains = isset($d['gains']) && is_array($d['gains']) ? array_values($d['gains']) : array(0, 0, 0, 0, 0);
+    $d['gains'] = array_map(function ($i) use ($gains) {
+        return isset($gains[$i]) && is_numeric($gains[$i]) ? max(-12.0, min(12.0, round(floatval($gains[$i]), 1))) : 0.0;
+    }, range(0, 4));
+    $d['preset'] = isset($d['preset']) && is_string($d['preset']) ? $d['preset'] : 'flat';
+    $d['on'] = !empty($d['on']);
+    return $d;
+}
+
+function AudioLevelerSaveEqData($d)
+{
+    return AudioLevelerWriteAtomic(AudioLevelerDataDir() . '/eq.json', json_encode($d));
+}
+
+function AudioLevelerFppConfigDir()
+{
+    global $settings;
+    $m = isset($settings['mediaDirectory']) ? $settings['mediaDirectory'] : '/home/fpp/media';
+    return $m . '/config';
+}
+
+// This FPP has the equalizer (Advanced audio groups with per-card EQ).
+function AudioLevelerEqSupported()
+{
+    $fpp = AudioLevelerFppDir();
+    $s = @file_get_contents($fpp . '/www/settings.json');
+    return $s !== false && strpos($s, '"MediaBackend"') !== false && strpos($s, '"PipeWireAudioGroups"') !== false
+        && file_exists($fpp . '/www/api/controllers/pipewire.php');
+}
+
+function AudioLevelerMediaBackend()
+{
+    global $settings;
+    return isset($settings['MediaBackend']) && $settings['MediaBackend'] !== '' ? $settings['MediaBackend'] : 'pipewire-simple';
+}
+
+// A request to FPP's own API on this player: array(status code, decoded body or raw text).
+function AudioLevelerFppApi($method, $path, $body = null, $raw = false)
+{
+    $opts = array('method' => $method, 'timeout' => 30, 'ignore_errors' => true, 'header' => '');
+    if ($body !== null) {
+        $opts['header'] = $raw ? "Content-Type: text/plain\r\n" : "Content-Type: application/json\r\n";
+        $opts['content'] = $raw ? (string) $body : json_encode($body);
+    }
+    $fp = @fopen('http://127.0.0.1/api/' . $path, 'r', false, stream_context_create(array('http' => $opts)));
+    if (!$fp) {
+        return array(0, null);
+    }
+    $text = stream_get_contents($fp);
+    $meta = stream_get_meta_data($fp);
+    fclose($fp);
+    $code = 0;
+    if (isset($meta['wrapper_data'][0]) && preg_match('#^HTTP/\S+\s+(\d+)#', $meta['wrapper_data'][0], $m)) {
+        $code = intval($m[1]);
+    }
+    $j = json_decode((string) $text, true);
+    return array($code, $j === null ? $text : $j);
+}
+
+// FPP's status, or null when fppd can't be asked.
+function AudioLevelerFppStatus()
+{
+    list($code, $st) = AudioLevelerFppApi('GET', 'fppd/status');
+    return $code === 200 && is_array($st) && isset($st['status_name']) ? $st : null;
+}
+
+// The sound card the EQ shapes: the one Simple mode plays on (its record),
+// else the first member of FPP's own Advanced groups.
+function AudioLevelerEqCard($groups = null)
+{
+    $simple = AudioLevelerReadJson(AudioLevelerFppConfigDir() . '/pipewire-audio-groups-simple.json', array());
+    $pick = function ($data) {
+        if (!isset($data['groups']) || !is_array($data['groups'])) {
+            return null;
+        }
+        $order = $data['groups'];
+        usort($order, function ($a, $b) {
+            return (empty($b['activeGroup']) ? 0 : 1) - (empty($a['activeGroup']) ? 0 : 1);
+        });
+        foreach ($order as $g) {
+            if (!empty($g['members']) && is_array($g['members'])) {
+                foreach ($g['members'] as $m) {
+                    if (!empty($m['cardId']) && empty($m['isAES67'])) {
+                        return array('groupId' => intval(isset($g['id']) ? $g['id'] : 1), 'cardId' => (string) $m['cardId'],
+                            'channels' => intval(isset($m['channels']) ? $m['channels'] : 2));
+                    }
+                }
+            }
+        }
+        return null;
+    };
+    return $groups !== null ? $pick($groups) : $pick($simple);
+}
+
+// GET /api/plugin/AudioLeveler/eq
+function AudioLevelerEqState()
+{
+    AudioLevelerNoCache();
+    $d = AudioLevelerEqData();
+    $out = array('status' => 'OK', 'supported' => AudioLevelerEqSupported(), 'on' => $d['on'], 'gains' => $d['gains'],
+        'preset' => $d['preset'], 'backend' => AudioLevelerMediaBackend(), 'kfmt' => is_dir(AudioLevelerPluginsDir() . '/fpp-kfmt'));
+    if (!$out['supported']) {
+        return json($out);
+    }
+    global $settings;
+    $out['rebootPending'] = isset($settings['rebootFlag']) && intval($settings['rebootFlag']) === 1;
+    $card = $d['on'] && isset($d['cardId']) ? array('cardId' => $d['cardId']) : AudioLevelerEqCard();
+    if ($card) {
+        $out['cardId'] = $card['cardId'];
+        $out['cardName'] = $card['cardId'];
+        list($code, $cards) = AudioLevelerFppApi('GET', 'pipewire/audio/cards');
+        foreach (is_array($cards) ? $cards : array() as $c) {
+            if (is_array($c) && isset($c['cardId']) && $c['cardId'] === $card['cardId']) {
+                $out['cardName'] = !empty($c['alias']) ? $c['alias'] : (isset($c['cardName']) ? $c['cardName'] : $c['cardId']);
+            }
+        }
+    }
+    $st = AudioLevelerFppStatus();
+    $out['idle'] = $st !== null && $st['status_name'] === 'idle';
+    return json($out);
+}
+
+// Turning the EQ on or off restarts FPP's audio: never while a show plays.
+function AudioLevelerEqNeedsIdle()
+{
+    $st = AudioLevelerFppStatus();
+    if ($st === null) {
+        return AudioLevelerError(503, 'FPPD isn\'t running, so FPP\'s audio can\'t be changed right now.');
+    }
+    if ($st['status_name'] !== 'idle') {
+        return AudioLevelerError(409, 'A show is playing. Turning the EQ on or off restarts FPP\'s audio, so stop the show first.');
+    }
+    return null;
+}
+
+// POST /api/plugin/AudioLeveler/eq/on    body: {"gains": [5 numbers], "preset"}
+function AudioLevelerEqOn()
+{
+    if (!AudioLevelerEqSupported()) {
+        return AudioLevelerError(400, 'This FPP has no equalizer (it needs FPP 10.4 or later).');
+    }
+    if ($e = AudioLevelerEqNeedsIdle()) {
+        return $e;
+    }
+    $body = AudioLevelerBody();
+    $d = AudioLevelerEqData();
+    if (isset($body['gains']) && is_array($body['gains'])) {
+        $d['gains'] = array_map(function ($g) { return max(-12.0, min(12.0, round(floatval($g), 1))); }, array_slice(array_values($body['gains']), 0, 5));
+    }
+    if (isset($body['preset']) && is_string($body['preset'])) {
+        $d['preset'] = substr(preg_replace('/[^a-z]/', '', $body['preset']), 0, 20);
+    }
+    if ($d['on']) {
+        return AudioLevelerError(409, 'The EQ is already on.');
+    }
+    $groupsFile = AudioLevelerFppConfigDir() . '/pipewire-audio-groups.json';
+    $backend = AudioLevelerMediaBackend();
+    $wasAdvanced = $backend === 'pipewire';
+    $prev = file_exists($groupsFile) ? @file_get_contents($groupsFile) : null;
+
+    if ($wasAdvanced) {
+        // FPP is already on Advanced audio (set up by hand): EQ the first card
+        // of its own groups and leave everything else as it is.
+        $data = json_decode((string) $prev, true);
+        $card = is_array($data) ? AudioLevelerEqCard($data) : null;
+        if (!$card) {
+            return AudioLevelerError(400, 'FPP is on Advanced audio but has no Audio Output Group with a sound card yet. Add one in FPP Settings > Audio/Video first.');
+        }
+    } else {
+        // The exact group Simple mode plays through, now as an Advanced group.
+        $data = AudioLevelerReadJson(AudioLevelerFppConfigDir() . '/pipewire-audio-groups-simple.json', array());
+        $card = AudioLevelerEqCard($data);
+        if (!$card) {
+            return AudioLevelerError(400, 'Couldn\'t tell which sound card FPP plays on. Pick one under FPP Settings > Audio/Video > Audio Output Device, then try again.');
+        }
+    }
+    foreach ($data['groups'] as &$g) {
+        if (intval(isset($g['id']) ? $g['id'] : 1) !== $card['groupId']) {
+            continue;
+        }
+        foreach ($g['members'] as &$m) {
+            if (isset($m['cardId']) && $m['cardId'] === $card['cardId']) {
+                $m['eq'] = array('enabled' => true, 'bands' => AudioLevelerEqBands($d['gains']));
+            }
+        }
+        unset($m);
+    }
+    unset($g);
+
+    list($code, $r) = AudioLevelerFppApi('POST', 'pipewire/audio/groups', $data);
+    if ($code !== 200) {
+        return AudioLevelerError(502, 'FPP didn\'t save the audio group. Nothing was changed.');
+    }
+    $d['on'] = true;
+    $d['cardId'] = $card['cardId'];
+    $d['groupId'] = $card['groupId'];
+    $d['channels'] = $card['channels'];
+    $d['switchedBackend'] = !$wasAdvanced;
+    $d['prevBackend'] = $backend;
+    $d['hadGroupsFile'] = $prev !== null;
+    $d['prevGroups'] = $prev;
+    AudioLevelerSaveEqData($d);
+
+    if ($wasAdvanced) {
+        AudioLevelerFppApi('POST', 'pipewire/audio/groups/apply', array());
+        AudioLevelerLog('Audio EQ on (FPP was already on Advanced audio; card ' . $card['cardId'] . ')');
+        return json(array('status' => 'OK', 'reboot' => false));
+    }
+    // FPP's own settings save switches the mode and applies the saved group.
+    AudioLevelerFppApi('PUT', 'settings/MediaBackend', 'pipewire', true);
+    AudioLevelerFppApi('PUT', 'settings/rebootFlag', '1', true);
+    AudioLevelerLog('Audio EQ on: Media Backend set to Advanced with the EQ on ' . $card['cardId'] . '; reboot to finish');
+    return json(array('status' => 'OK', 'reboot' => true));
+}
+
+// POST /api/plugin/AudioLeveler/eq/off
+function AudioLevelerEqOff()
+{
+    $d = AudioLevelerEqData();
+    if (!$d['on']) {
+        return json(array('status' => 'OK', 'reboot' => false));
+    }
+    if ($e = AudioLevelerEqNeedsIdle()) {
+        return $e;
+    }
+    $res = AudioLevelerEqRestore($d);
+    return json(array('status' => 'OK', 'reboot' => $res));
+}
+
+// Put FPP's audio back exactly as it was before the EQ was turned on.
+// Returns true when a reboot is needed. (Also used by uninstall.)
+function AudioLevelerEqRestore($d)
+{
+    $groupsFile = AudioLevelerFppConfigDir() . '/pipewire-audio-groups.json';
+    if (!empty($d['hadGroupsFile']) && isset($d['prevGroups']) && is_string($d['prevGroups'])) {
+        AudioLevelerWriteAtomic($groupsFile, $d['prevGroups']);
+    } elseif (empty($d['hadGroupsFile'])) {
+        @unlink($groupsFile);
+    }
+    $reboot = false;
+    if (!empty($d['switchedBackend'])) {
+        $back = isset($d['prevBackend']) && is_string($d['prevBackend']) ? $d['prevBackend'] : 'pipewire-simple';
+        AudioLevelerFppApi('PUT', 'settings/MediaBackend', $back, true);
+        AudioLevelerFppApi('PUT', 'settings/rebootFlag', '1', true);
+        $reboot = true;
+    } else {
+        AudioLevelerFppApi('POST', 'pipewire/audio/groups/apply', array());
+    }
+    $d['on'] = false;
+    unset($d['prevGroups'], $d['hadGroupsFile'], $d['switchedBackend'], $d['prevBackend']);
+    AudioLevelerSaveEqData($d);
+    AudioLevelerLog('Audio EQ off: FPP\'s audio settings put back as they were' . ($reboot ? '; reboot to finish' : ''));
+    return $reboot;
+}
+
+// POST /api/plugin/AudioLeveler/eq/live   body: {"gains": [5]}
+// Changes the running EQ at once (FPP's own live update); nothing is saved.
+function AudioLevelerEqLive()
+{
+    $d = AudioLevelerEqData();
+    if (!$d['on']) {
+        return AudioLevelerError(409, 'Turn the EQ on first.');
+    }
+    $body = AudioLevelerBody();
+    $gains = isset($body['gains']) && is_array($body['gains']) ? array_values($body['gains']) : $d['gains'];
+    list($code, $r) = AudioLevelerFppApi('POST', 'pipewire/audio/eq/update', array(
+        'groupId' => isset($d['groupId']) ? $d['groupId'] : 1, 'cardId' => isset($d['cardId']) ? $d['cardId'] : '',
+        'channels' => isset($d['channels']) ? $d['channels'] : 2, 'bands' => AudioLevelerEqBands($gains)));
+    if (is_array($r) && isset($r['status']) && $r['status'] === 'NOT_RUNNING') {
+        return json(array('status' => 'NOT_RUNNING', 'message' => 'The EQ isn\'t running yet: reboot FPP to finish turning it on.'));
+    }
+    return json(array('status' => $code === 200 ? 'OK' : 'ERROR'));
+}
+
+// POST /api/plugin/AudioLeveler/eq/save   body: {"gains": [5], "preset"}
+// Remembered here always; when the EQ is on, written into FPP's group and
+// applied, so it survives a reboot.
+function AudioLevelerEqSave()
+{
+    $body = AudioLevelerBody();
+    $d = AudioLevelerEqData();
+    if (!isset($body['gains']) || !is_array($body['gains'])) {
+        return AudioLevelerError(400, 'No EQ settings to save.');
+    }
+    $d['gains'] = array_map(function ($i) use ($body) {
+        $g = array_values($body['gains']);
+        return isset($g[$i]) ? max(-12.0, min(12.0, round(floatval($g[$i]), 1))) : 0.0;
+    }, range(0, 4));
+    if (isset($body['preset']) && is_string($body['preset'])) {
+        $d['preset'] = substr(preg_replace('/[^a-z]/', '', $body['preset']), 0, 20);
+    }
+    if (!$d['on']) {
+        AudioLevelerSaveEqData($d);
+        return json(array('status' => 'OK', 'applied' => false));
+    }
+    if ($e = AudioLevelerEqNeedsIdle()) {
+        return $e;
+    }
+    list($code, $data) = AudioLevelerFppApi('GET', 'pipewire/audio/groups');
+    if ($code !== 200 || !is_array($data) || !isset($data['groups'])) {
+        return AudioLevelerError(502, 'Couldn\'t read FPP\'s audio groups.');
+    }
+    $found = false;
+    foreach ($data['groups'] as &$g) {
+        if (intval(isset($g['id']) ? $g['id'] : 1) !== intval($d['groupId'])) {
+            continue;
+        }
+        foreach ($g['members'] as &$m) {
+            if (isset($m['cardId']) && $m['cardId'] === $d['cardId']) {
+                $m['eq'] = array('enabled' => true, 'bands' => AudioLevelerEqBands($d['gains']));
+                $found = true;
+            }
+        }
+        unset($m);
+    }
+    unset($g);
+    if (!$found) {
+        return AudioLevelerError(409, 'FPP\'s audio groups no longer have the card the EQ was on. Untick and tick the EQ to set it up again.');
+    }
+    list($code) = AudioLevelerFppApi('POST', 'pipewire/audio/groups', $data);
+    if ($code !== 200) {
+        return AudioLevelerError(502, 'FPP didn\'t save the EQ.');
+    }
+    AudioLevelerSaveEqData($d);
+    AudioLevelerFppApi('POST', 'pipewire/audio/groups/apply', array());
+    AudioLevelerLog('Audio EQ saved: ' . implode(' / ', $d['gains']) . ' dB');
+    return json(array('status' => 'OK', 'applied' => true));
 }
 ?>

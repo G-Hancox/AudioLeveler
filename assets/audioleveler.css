@@ -97,3 +97,32 @@
 /* Player bar: stays in view at the bottom while a song plays */
 #alPlayer.al-player {position: sticky; bottom: 0; z-index: 3; background-color: var(--bs-tertiary-bg)}
 #audioLeveler .al-play {padding: .15rem .4rem; line-height: 1.2}
+
+/* Audio EQ tab: its own panel; the leveling list hides meanwhile */
+#audioLeveler:not(.al-tab-eq) .al-eq-only, #audioLeveler.al-tab-eq .al-list-only {display:none !important}
+#alEqPanel .al-eq-sliders {min-height: 200px}
+/* Faders: a thin track and a flat knob, like a hardware EQ */
+#alEqPanel .al-eq-slider {writing-mode: vertical-lr; direction: rtl; width: 30px; height: 150px; padding: 0;
+    -webkit-appearance: none; appearance: none; background: transparent}
+#alEqPanel .al-eq-slider::-webkit-slider-runnable-track {width: 6px; height: 100%; margin: 0 auto; background: #14171a;
+    border: 1px solid #555c64; border-radius: 4px}
+#alEqPanel .al-eq-slider::-webkit-slider-thumb {-webkit-appearance: none; appearance: none; width: 30px; height: 14px;
+    margin-left: -13px; border-radius: 3px; border: 0; background: linear-gradient(#e1e4e7, #9aa1a8); box-shadow: 0 1px 3px #000}
+#alEqPanel .al-eq-slider::-moz-range-track {width: 6px; background: #14171a; border: 1px solid #555c64; border-radius: 4px}
+#alEqPanel .al-eq-slider::-moz-range-thumb {width: 30px; height: 14px; border-radius: 3px; border: 0;
+    background: linear-gradient(#e1e4e7, #9aa1a8); box-shadow: 0 1px 3px #000}
+#alEqPanel .al-eq-slider:focus-visible::-webkit-slider-thumb {outline: 2px solid var(--bs-primary)}
+#alEqPanel .al-vu {width: 100%; max-width: 360px; height: auto; border: 3px solid #111; border-radius: 10px; display: block}
+#alEqPanel .al-leds {width: 100%; max-width: 360px; height: auto; color: var(--bs-secondary-color)}
+#alEqPanel .al-lamp {display: inline-block; width: .85rem; height: .85rem; border-radius: 50%; border: 1px solid #000}
+#alEqPanel .al-lamp-off {background: #5a1a1a}
+#alEqPanel .al-lamp-on {background: #ff4040; box-shadow: 0 0 8px #ff3030}
+#alTxLamp.al-lamp-off {background: #1f6b3f}
+.al-eq-tip .tooltip-inner {max-width: 26rem; text-align: left}
+#alEqPanel .al-eq-sliders > div {flex: 1 1 0; min-width: 0}
+#alEqPanel .al-eq-sliders .small {white-space: nowrap}
+@media (max-width: 575.98px) {
+    #alEqPanel .al-eq-sliders .small {font-size: .7rem}
+    #alEqPanel .al-eq-db {letter-spacing: -.03em}
+}
+@media (max-width: 575.98px) { #alEqPanel .al-unit {display: none} }

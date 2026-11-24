@@ -595,13 +595,17 @@
     // Switch between the Songs and Videos lists. The selection and filter
     // start fresh: each tab is its own list.
     function setTab(name, quiet) {
+        if (tab === 'eq' && name !== 'eq') { eqRevertIfDirty(false); }
         tab = name;
-        if (name !== 'info') {
+        if (name !== 'info' && name !== 'eq') {
             try { localStorage.setItem('audioLeveler.tab', name); } catch (e) { /* no storage */ }
         }
         $id('audioLeveler').classList.toggle('al-tab-info', name === 'info');
+        $id('audioLeveler').classList.toggle('al-tab-eq', name === 'eq');
         if (name === 'info') { renderInfo(); loadTags(); }
-        [['songs', 'alTabSongs'], ['videos', 'alTabVideos'], ['info', 'alTabInfo']].forEach(function (t) {
+        if (name === 'eq') { renderEq(); loadEq(); eqStartPolling(); startMeter(); }
+        applyEqToPlayer();
+        [['songs', 'alTabSongs'], ['videos', 'alTabVideos'], ['info', 'alTabInfo'], ['eq', 'alTabEq']].forEach(function (t) {
             var on = t[0] === name;
             $id(t[1]).classList.toggle('active', on);
             $id(t[1]).setAttribute('aria-selected', on ? 'true' : 'false');
@@ -1091,6 +1095,7 @@
        (fppd's Play Media, which applies Normalize itself). */
 
     var VIDEO_PREFIX = 'videos/';
+    var PREVIEW_PLAYLIST = 'AudioLeveler-Preview';   // api.php's temporary preview playlist
     var player = {
         name: null,        // what's playing
         list: [],          // the list it was started from, for Next
@@ -1201,8 +1206,12 @@
             player.audio.load();
             player.audio = null;
         }
-        if (player.src) { try { player.src.disconnect(); } catch (e) { /* gone */ } player.src = null; }
-        if (player.gain) { try { player.gain.disconnect(); } catch (e) { /* gone */ } player.gain = null; }
+        [player.src, player.gain, player.split, player.out].concat(player.eqNodes || [], player.analysers || []).forEach(function (n) {
+            if (n) { try { n.disconnect(); } catch (e) { /* gone */ } }
+        });
+        player.src = player.gain = player.split = player.out = null;
+        player.eqNodes = player.analysers = null;
+        resetMeter();
         if (player.mode === 'show' && player.name && tellFpp !== false) {
             api('POST', 'preview', { file: player.name, action: 'stop' }).catch(function () { /* stopped anyway */ });
         }
@@ -1218,20 +1227,59 @@
         renderPlayer();
     }
 
-    function playInBrowser(name) {
+    // The browser's copy of what FPP plays: the song, its Normalize setting,
+    // FPP's five EQ bands, then the meter, and the speakers unless silent (a
+    // silent copy drives the meter while the song plays through the show).
+    function buildChain(a, silent) {
         var C = window.AudioContext || window.webkitAudioContext;
+        if (!C) { return; }
+        if (!player.ctx) { player.ctx = new C(); }
+        if (player.ctx.state === 'suspended') { player.ctx.resume(); }
+        var ctx = player.ctx;
+        player.src = ctx.createMediaElementSource(a);
+        player.gain = ctx.createGain();
+        player.src.connect(player.gain);
+        var last = player.gain;
+        player.eqNodes = EQ_BANDS.map(function (b) {
+            var f = ctx.createBiquadFilter();
+            f.type = b[0];
+            f.frequency.value = b[1];
+            f.Q.value = b[2];
+            last.connect(f);
+            last = f;
+            return f;
+        });
+        var split = ctx.createChannelSplitter(2);
+        last.connect(split);
+        player.analysers = [0, 1].map(function (ch) {
+            var an = ctx.createAnalyser();
+            an.fftSize = 2048;
+            split.connect(an, ch);
+            return an;
+        });
+        player.out = ctx.createGain();
+        player.out.gain.value = silent ? 0 : 1;   // silent still has to reach the output to be processed
+        last.connect(player.out);
+        player.out.connect(ctx.destination);
+        player.split = split;
+        applyGain();
+        applyEqToPlayer();
+        startMeter();
+    }
+
+    // The EQ heard in the browser: the Audio EQ tab's sliders (or flat for
+    // Before), and otherwise the EQ FPP plays with when it's on.
+    function applyEqToPlayer() {
+        if (!player.eqNodes) { return; }
+        var g = (tab === 'eq' || eq.on) ? eqPlaybackGains() : [0, 0, 0, 0, 0];
+        player.eqNodes.forEach(function (f, i) { f.gain.value = g[i]; });
+    }
+
+    function playInBrowser(name) {
         var a = new Audio(playUrl(name));
         a.preload = 'auto';
         player.audio = a;
-        if (C) {
-            if (!player.ctx) { player.ctx = new C(); }
-            if (player.ctx.state === 'suspended') { player.ctx.resume(); }
-            player.src = player.ctx.createMediaElementSource(a);
-            player.gain = player.ctx.createGain();
-            player.src.connect(player.gain);
-            player.gain.connect(player.ctx.destination);
-            applyGain();
-        }
+        buildChain(a, false);
         a.addEventListener('timeupdate', updateTime);
         a.addEventListener('loadedmetadata', updateTime);
         a.addEventListener('ended', function () { if (player.audio === a) { stopPlayer(); } });
@@ -1249,6 +1297,11 @@
             if (player.name !== name || player.mode !== 'show') { return; }
             player.started = Date.now();
             player.dur = f.dur || 0;
+            // A silent copy in step with FPP, for the meter.
+            var shadow = new Audio(playUrl(name));
+            player.audio = shadow;
+            buildChain(shadow, true);
+            shadow.play().catch(function () { /* the meter just stays still */ });
             if (!player.dur) {
                 // Not measured yet: read its length from the file's header.
                 var probe = new Audio();
@@ -1268,7 +1321,9 @@
     // While the bar is up: can it play through the show, and has a show started?
     function pollShow() {
         fetch('/api/fppd/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (st) {
-            var idle = st && st.status_name === 'idle';
+            // Our own preview playlist is not a show.
+            var ours = st && st.current_playlist && st.current_playlist.playlist === PREVIEW_PLAYLIST;
+            var idle = st && (st.status_name === 'idle' || ours);
             if (player.mode === 'show' && player.name && !idle) {
                 toast('A show started, so the preview stopped.');
                 stopSound(false);
@@ -1337,10 +1392,453 @@
         });
         // Leaving the page doesn't leave a song playing through the show.
         window.addEventListener('pagehide', function () {
+            if (tab === 'eq') { eqRevertIfDirty(true); }
             if (player.mode === 'show' && player.name && navigator.sendBeacon) {
                 navigator.sendBeacon(API + 'preview', JSON.stringify({ file: player.name, action: 'stop' }));
             }
         });
+    }
+
+    /* ---------------- Audio EQ tab ----------------
+       A front end for FPP's own equalizer: FPP's five EQ bands on the show's
+       sound card (Audio Output Groups, FPP 10.4+). Presets only cut, so the
+       transmitter never gets a hotter signal. Sliders change the running EQ
+       at once (FPP's live update) and are kept with Save; leaving with
+       unsaved changes puts the saved EQ back. The meter reads the song the
+       player is playing, with its Normalize setting and this EQ applied. */
+
+    var EQ_FREQS = ['60 Hz', '250 Hz', '1 kHz', '4 kHz', '12 kHz'];
+    // [type, frequency, Q] of FPP's five default bands, for the browser's copy of the EQ.
+    var EQ_BANDS = [['lowshelf', 60, 0.7], ['peaking', 250, 1.0], ['peaking', 1000, 1.0], ['peaking', 4000, 1.0], ['highshelf', 12000, 0.7]];
+    var EQ_PRESETS = [
+        ['fmclear', 'FM Clear', [-4, -1.5, -1, 0, -4]],
+        ['bass', 'Bass Boost', [0, -1, -4, -4, -4]],
+        ['loud', 'Loudness', [0, -3, -5, -3, -1]],
+        ['vocal', 'Vocal', [-6, -4, 0, 0, -3]],
+        ['rock', 'Rock', [0, -3, -5, -2, 0]],
+        ['pop', 'Pop', [-3, -1, 0, -1, -3]],
+        ['oldradio', 'Old Radio', [-12, -6, 0, -8, -12]],
+        ['flat', 'Flat', [0, 0, 0, 0, 0]]
+    ];
+    var EQ_WARNINGS =
+        '<b>Before you use the EQ</b><ul class="mb-0 ps-3 text-start">' +
+        '<li><b>Ticking it switches FPP\'s audio to Advanced (Full PipeWire)</b> with your show\'s sound card, and needs a reboot. ' +
+        '<b>Unticking puts FPP\'s audio settings back exactly as they were</b> (another reboot); your EQ is remembered for next time.</li>' +
+        '<li><b>Turning it on or off, and Save, restart FPP\'s audio</b>, which stops anything playing. It won\'t while a show is running.</li>' +
+        '<li><b>Raising a slider makes the signal hotter.</b> Too hot overdrives an FM transmitter: distortion, and RDS can drop out. ' +
+        'The presets only cut; if you push sliders up, watch the meter.</li>' +
+        '<li>Some presets make the show a little quieter overall: turn FPP\'s volume up a touch if needed.</li>' +
+        '<li><b>It changes everything FPP plays through this sound card</b>, every song and video, not one song.</li>' +
+        '<li><b>Slider changes play live but aren\'t kept until Save.</b> Leave without saving and the saved EQ comes back.</li>' +
+        '<li>These are FPP\'s own EQ settings (Audio Output Groups), so changes show there too.</li></ul>';
+
+    var eq = {
+        loaded: false, supported: false, on: false, gains: [0, 0, 0, 0, 0], saved: [0, 0, 0, 0, 0], preset: 'flat',
+        rebootPending: false, cardName: '', kfmt: false, after: true, confirming: false, busy: false,
+        showRunning: false, liveTimer: null, liveSent: '', tx: null, txTimer: null, statusTimer: null
+    };
+
+    function eqDirty() { return eq.gains.join() !== eq.saved.join(); }
+    function eqPlaybackGains() { return eq.after ? eq.gains : [0, 0, 0, 0, 0]; }
+
+    function loadEq() {
+        return api('GET', 'eq').then(function (j) {
+            eq.loaded = true;
+            eq.supported = !!j.supported;
+            eq.on = !!j.on;
+            eq.rebootPending = !!j.rebootPending;
+            eq.cardName = j.cardName || j.cardId || '';
+            eq.kfmt = !!j.kfmt;
+            eq.showRunning = j.idle === false;
+            if (!eqDirty()) { eq.gains = (j.gains || [0, 0, 0, 0, 0]).slice(); }
+            eq.saved = (j.gains || [0, 0, 0, 0, 0]).slice();
+            eq.preset = j.preset || 'flat';
+            renderEq();
+        }).catch(function (e) { toast(e.message, false); });
+    }
+
+    function renderEq() {
+        var el = $id('alEqPanel');
+        if (tab !== 'eq') { return; }
+        if (!el.firstChild) {
+            el.innerHTML =
+                '<div id="alEqStatus" class="d-flex flex-wrap align-items-center gap-2 rounded border bg-body-tertiary px-3 py-2 mb-3"></div>' +
+                '<div id="alEqConfirm" class="alert alert-warning small d-none"></div>' +
+                '<div id="alEqBody">' +
+                '<div class="small fw-semibold text-body-secondary text-uppercase mb-1">Presets</div>' +
+                '<div id="alEqPresets" class="d-flex flex-wrap gap-2 mb-3">' + EQ_PRESETS.map(function (p) {
+                    return '<button type="button" class="buttons btn btn-sm btn-outline-secondary" data-preset="' + p[0] + '">' + p[1] + '</button>';
+                }).join('') + '</div>' +
+                '<div class="row g-3">' +
+                '<div class="col-12 col-lg-7"><div class="rounded border p-3 h-100">' +
+                '<div class="d-flex flex-wrap align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase me-auto">Equalizer (dB)</span>' +
+                '<span id="alEqDirty" class="badge text-bg-warning d-none">Unsaved changes</span>' +
+                '<span id="alEqAB" class="btn-group btn-group-sm" role="group" aria-label="Hear the EQ">' +
+                '<button type="button" class="btn btn-outline-secondary" data-ab="before" title="Hear it with the EQ flat">Before</button>' +
+                '<button type="button" class="btn btn-outline-secondary" data-ab="after" title="Hear it with this EQ">After</button></span></div>' +
+                '<div id="alEqSliders" class="d-flex justify-content-around al-eq-sliders">' + EQ_FREQS.map(function (f, i) {
+                    return '<div class="d-flex flex-column align-items-center gap-1"><span class="small font-monospace al-eq-db" id="alEqDb' + i + '"></span>' +
+                        '<input type="range" class="form-range al-eq-slider" min="-12" max="12" step="0.5" data-band="' + i + '" aria-label="' + f + ' gain in dB">' +
+                        '<span class="small text-body-secondary">' + f + '</span></div>';
+                }).join('') + '</div>' +
+                '<div class="form-text">Presets only cut, so the transmitter never gets a hotter signal. Changes play live; <b>Save</b> keeps them.</div>' +
+                '<div class="d-flex gap-2 justify-content-end mt-2">' +
+                '<button id="alEqUndo" type="button" class="btn btn-sm btn-outline-secondary">Undo</button>' +
+                '<button id="alEqSave" type="button" class="buttons btn btn-sm btn-success">Save</button></div>' +
+                '</div></div>' +
+                '<div class="col-12 col-lg-5"><div class="rounded border p-3 h-100">' +
+                '<div class="d-flex align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase me-auto">Level</span>' +
+                '<span id="alEqMeterHelp"></span></div>' +
+                '<canvas id="alVu" class="al-vu" width="360" height="170" aria-label="VU meter"></canvas>' +
+                '<div class="d-flex align-items-center gap-3 mt-2 small">' +
+                '<span class="d-flex align-items-center gap-1"><span id="alPeakLamp" class="al-lamp"></span> Peak</span>' +
+                '<span id="alTxWrap" class="d-flex align-items-center gap-1 d-none"><span id="alTxLamp" class="al-lamp al-lamp-off"></span> TX (K-FMT)' +
+                '<span id="alTxHelp"></span></span>' +
+                '<button id="alTxClear" type="button" class="btn btn-sm btn-outline-secondary ms-auto d-none">Clear TX</button></div>' +
+                '<div class="mt-2"><canvas id="alLeds" class="al-leds" width="360" height="34" aria-hidden="true"></canvas></div>' +
+                '</div></div></div>' +
+                '<div class="d-flex flex-wrap align-items-center gap-2 mt-3">' +
+                '<span class="small text-body-secondary">Test song</span>' +
+                '<select id="alEqSong" class="form-select form-select-sm w-auto" aria-label="Song to test the EQ with"></select>' +
+                '<button id="alEqPlay" type="button" class="buttons btn btn-sm btn-outline-success"><i class="fas fa-fw fa-play"></i> Play</button>' +
+                '<span class="small text-body-secondary">The player below has Stop, Next and <b>Play through the show</b>, to hear it on your speakers and FM.</span>' +
+                '</div></div>';
+            wireEq();
+        }
+        // Status strip
+        var st = $id('alEqStatus');
+        if (!eq.loaded) {
+            st.innerHTML = '<span class="text-body-secondary">Loading&hellip;</span>';
+        } else if (!eq.supported) {
+            st.innerHTML = '<span class="text-body-secondary">This FPP has no equalizer. It needs FPP 10.4 or later. ' +
+                'You can still try the presets here in your browser.</span>';
+        } else {
+            st.innerHTML =
+                '<span class="rounded-circle d-inline-block" style="width:.6rem;height:.6rem;background:' + (eq.on ? 'var(--bs-success)' : 'var(--bs-secondary)') + '"></span>' +
+                '<b>' + (eq.rebootPending ? 'Reboot FPP to finish' : eq.on ? 'Equalizer on' : 'Equalizer off') + '</b>' +
+                '<span class="text-body-secondary small">' + (eq.cardName ? 'Shaping <b class="text-body">' + esc(eq.cardName) + '</b>' : '') +
+                (eq.rebootPending ? ' &middot; use the Reboot button at the top of FPP' : '') +
+                (!eq.on && !eq.rebootPending ? ' &middot; the presets play here in your browser until you tick it' : '') + '</span>' +
+                '<span class="form-check ms-auto mb-0"><input id="alEqOn" class="form-check-input" type="checkbox"' + (eq.on ? ' checked' : '') +
+                (eq.busy || eq.showRunning ? ' disabled' : '') + '> <label class="form-check-label ms-2" for="alEqOn">EQ on</label></span>' +
+                helpIconHtml(EQ_WARNINGS);
+            var box = $id('alEqOn');
+            if (box) {
+                box.addEventListener('change', function () {
+                    this.checked = eq.on;   // nothing changes until it's confirmed
+                    eqAskToggle();
+                });
+            }
+        }
+        // Presets, sliders, buttons
+        var matching = EQ_PRESETS.filter(function (p) { return p[2].join() === eq.gains.join(); })[0];
+        Array.prototype.forEach.call(el.querySelectorAll('[data-preset]'), function (b) {
+            var on = matching && matching[0] === b.getAttribute('data-preset');
+            b.classList.toggle('btn-success', !!on);
+            b.classList.toggle('btn-outline-secondary', !on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        Array.prototype.forEach.call(el.querySelectorAll('.al-eq-slider'), function (s) {
+            var i = +s.getAttribute('data-band');
+            if (document.activeElement !== s) { s.value = eq.gains[i]; }
+            $id('alEqDb' + i).innerHTML = (eq.gains[i] > 0 ? '+' : '') + eq.gains[i].toFixed(1) + '<span class="al-unit"> dB</span>';
+        });
+        Array.prototype.forEach.call(el.querySelectorAll('[data-ab]'), function (b) {
+            var on = (b.getAttribute('data-ab') === 'after') === eq.after;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        $id('alEqDirty').classList.toggle('d-none', !eqDirty());
+        $id('alEqUndo').disabled = !eqDirty();
+        $id('alEqSave').disabled = !eqDirty() || eq.busy;
+        $id('alTxWrap').classList.toggle('d-none', !eq.kfmt);
+        $id('alTxClear').classList.toggle('d-none', !eq.kfmt);
+        // Test songs: the Songs list as it stands
+        var sel = $id('alEqSong');
+        var names = allFiles.filter(function (f) { return !f.video; }).map(function (f) { return f.name; });
+        if (sel.options.length !== names.length) {
+            var keep = sel.value;
+            sel.innerHTML = names.map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('');
+            if (keep && names.indexOf(keep) >= 0) { sel.value = keep; }
+        }
+        if (player.name && names.indexOf(player.name) >= 0 && document.activeElement !== sel) { sel.value = player.name; }
+        drawVu(meter.vu, meter.peakUntil > Date.now());
+    }
+
+    function helpIconHtml(html) {
+        return '<span data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="auto" data-bs-custom-class="al-eq-tip" data-bs-title="' +
+            esc(html) + '"><img src="images/redesign/help-icon.svg" class="icon-help" alt="Help"></span>';
+    }
+
+    function initTips(root) {
+        if (window.bootstrap && bootstrap.Tooltip) {
+            Array.prototype.forEach.call(root.querySelectorAll('[data-bs-toggle="tooltip"]'), function (t) {
+                bootstrap.Tooltip.getOrCreateInstance(t);
+            });
+        }
+    }
+
+    // Ticking or unticking asks first, with what it will do.
+    function eqAskToggle() {
+        var c = $id('alEqConfirm');
+        if (eq.showRunning) { toast('A show is playing. Stop it first: this restarts FPP\'s audio.', false); return; }
+        c.innerHTML = eq.on
+            ? '<b>Turn the EQ off?</b> FPP\'s audio settings go back exactly as they were before you turned it on, then FPP needs a reboot. ' +
+              'Your EQ is remembered for next time. <div class="mt-2"><button type="button" class="btn btn-sm btn-warning" data-eq-confirm="off">Turn it off</button> ' +
+              '<button type="button" class="btn btn-sm btn-link" data-eq-confirm="cancel">Cancel</button></div>'
+            : '<b>Turn the EQ on?</b> FPP\'s audio switches to Advanced (Full PipeWire) with the same sound card' +
+              (eq.cardName ? ' (' + esc(eq.cardName) + ')' : '') + ' and this EQ on it, then FPP needs a reboot. ' +
+              'Untick it any time to put everything back. <div class="mt-2"><button type="button" class="btn btn-sm btn-warning" data-eq-confirm="on">Turn it on</button> ' +
+              '<button type="button" class="btn btn-sm btn-link" data-eq-confirm="cancel">Cancel</button></div>';
+        c.classList.remove('d-none');
+    }
+
+    function eqSendLive(force) {
+        if (!eq.on || eq.rebootPending || eq.showRunning) { return; }
+        var gains = player.mode === 'show' ? eqPlaybackGains() : eq.gains;
+        var key = gains.join();
+        if (!force && key === eq.liveSent) { return; }
+        clearTimeout(eq.liveTimer);
+        // A few a second at most: each one is a small job for FPP.
+        eq.liveTimer = setTimeout(function () {
+            eq.liveSent = key;
+            api('POST', 'eq/live', { gains: gains }).then(function (j) {
+                if (j.status === 'NOT_RUNNING') { eq.rebootPending = true; renderEq(); }
+            }).catch(function () { /* best effort, like FPP's own page */ });
+        }, 250);
+    }
+
+    function eqSetGains(g) {
+        eq.gains = g.map(function (x) { return Math.max(-12, Math.min(12, Math.round(x * 2) / 2)); });
+        applyEqToPlayer();
+        eqSendLive();
+        renderEq();
+    }
+
+    function wireEq() {
+        var el = $id('alEqPanel');
+        el.addEventListener('click', function (e) {
+            var p = e.target.closest('[data-preset]');
+            if (p) {
+                var pr = EQ_PRESETS.filter(function (x) { return x[0] === p.getAttribute('data-preset'); })[0];
+                eq.preset = pr[0];
+                eqSetGains(pr[2].slice());
+                return;
+            }
+            var ab = e.target.closest('[data-ab]');
+            if (ab) {
+                eq.after = ab.getAttribute('data-ab') === 'after';
+                applyEqToPlayer();
+                eqSendLive(true);
+                renderEq();
+                return;
+            }
+            var c = e.target.closest('[data-eq-confirm]');
+            if (c) {
+                var what = c.getAttribute('data-eq-confirm');
+                $id('alEqConfirm').classList.add('d-none');
+                if (what === 'cancel') { return; }
+                eq.busy = true;
+                renderEq();
+                api('POST', what === 'on' ? 'eq/on' : 'eq/off', what === 'on' ? { gains: eq.gains, preset: eq.preset } : {}).then(function (j) {
+                    toast(what === 'on'
+                        ? (j.reboot ? 'The EQ is set up. Reboot FPP to finish (Reboot button at the top).' : 'The EQ is on.')
+                        : (j.reboot ? 'FPP\'s audio settings are back as they were. Reboot FPP to finish.' : 'The EQ is off.'));
+                }).catch(function (ex) { toast(ex.message, false); }).then(function () {
+                    eq.busy = false;
+                    return loadEq();
+                });
+            }
+        });
+        el.addEventListener('input', function (e) {
+            if (!e.target.classList.contains('al-eq-slider')) { return; }
+            var g = eq.gains.slice();
+            g[+e.target.getAttribute('data-band')] = parseFloat(e.target.value);
+            eq.preset = 'custom';
+            eqSetGains(g);
+        });
+        $id('alEqUndo').addEventListener('click', function () { eqSetGains(eq.saved.slice()); });
+        $id('alEqSave').addEventListener('click', function () {
+            eq.busy = true;
+            renderEq();
+            api('POST', 'eq/save', { gains: eq.gains, preset: eq.preset }).then(function (j) {
+                eq.saved = eq.gains.slice();
+                toast(j.applied ? 'EQ saved in FPP.' : 'EQ saved. It goes on FPP when you tick EQ on.');
+            }).catch(function (ex) { toast(ex.message, false); }).then(function () { eq.busy = false; renderEq(); });
+        });
+        $id('alEqPlay').addEventListener('click', function () {
+            var n = $id('alEqSong').value;
+            if (!n) { return; }
+            var list = Array.prototype.map.call($id('alEqSong').options, function (o) { return o.value; });
+            if (player.name === n) { stopPlayer(); } else { play(n, list); }
+        });
+        $id('alTxClear').addEventListener('click', function () {
+            fetch('/api/plugin-apis/kfmt/clearpeak', { method: 'POST' }).then(pollTx).catch(function () { /* not there */ });
+        });
+        $id('alEqMeterHelp').innerHTML = helpIconHtml('The needle shows the song the player is playing, with its Normalize setting and this EQ, ' +
+            'before FPP\'s volume. Around 0 is a healthy level; red is hot. <b>Peak</b> flashes on the loudest moments.');
+        $id('alTxHelp').innerHTML = helpIconHtml('Lights red when the K-FMT\'s own input reading hits the top. Read only: it is only cleared when you press Clear TX, ' +
+            'the same as on the K-FMT page. A brief flash is usually fine; red most of the time means turn down.');
+        initTips(el);
+    }
+
+    // The K-FMT's own peak reading, read only.
+    function pollTx() {
+        if (!eq.kfmt || tab !== 'eq') { return Promise.resolve(); }
+        return fetch('/api/plugin-apis/kfmt', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+            var lamp = $id('alTxLamp');
+            if (!lamp) { return; }
+            lamp.classList.toggle('al-lamp-on', !!j.audioClip);
+            lamp.classList.toggle('al-lamp-off', !j.audioClip);
+            lamp.title = 'K-FMT input peak ' + (j.audioPeak === undefined ? '?' : j.audioPeak) + ' / 15';
+        }).catch(function () { /* the plugin isn't answering */ });
+    }
+
+    // While the tab is open: is a show running (no live changes then), and the TX lamp.
+    function eqStartPolling() {
+        if (eq.statusTimer) { return; }
+        eq.statusTimer = setInterval(function () {
+            if (tab !== 'eq') { clearInterval(eq.statusTimer); eq.statusTimer = null; return; }
+            fetch('/api/fppd/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (st) {
+                var cur = st && st.current_playlist && st.current_playlist.playlist;
+                var was = eq.showRunning;
+                eq.showRunning = !!st && st.status_name !== 'idle' && cur !== PREVIEW_PLAYLIST;
+                if (was !== eq.showRunning) { renderEq(); }
+            }).catch(function () { /* fppd down */ });
+            pollTx();
+        }, 2000);
+    }
+
+    // Leaving with unsaved changes puts the saved EQ back on FPP.
+    function eqRevertIfDirty(beacon) {
+        if (!eq.on || !eqDirty()) { return; }
+        var body = JSON.stringify({ gains: eq.saved });
+        if (beacon && navigator.sendBeacon) {
+            navigator.sendBeacon(API + 'eq/live', body);
+        } else {
+            api('POST', 'eq/live', { gains: eq.saved }).catch(function () { /* best effort */ });
+        }
+        eq.gains = eq.saved.slice();
+        applyEqToPlayer();
+    }
+
+    /* ---- the meter ---- */
+    var meter = { vu: -40, peakUntil: 0, raf: 0, last: 0, l: -60, r: -60 };
+
+    function drawVu(vu, peakOn) {
+        var c = $id('alVu');
+        if (!c) { return; }
+        var x = c.getContext('2d'), w = c.width, h = c.height;
+        var cx = w / 2, cy = h * 1.02, rad = h * 0.86;
+        // VU scale: -20 .. +3, positions as on a classic meter face
+        var marks = [[-20, -48], [-10, -33], [-7, -24], [-5, -15], [-3, -6], [-2, 0], [-1, 6], [0, 13], [1, 21], [2, 30], [3, 40]];
+        var ang = function (v) {
+            if (v <= -20) { return -48; }
+            if (v >= 3) { return 40; }
+            for (var i = 1; i < marks.length; i++) {
+                if (v <= marks[i][0]) {
+                    var a = marks[i - 1], b = marks[i];
+                    return a[1] + (b[1] - a[1]) * (v - a[0]) / (b[0] - a[0]);
+                }
+            }
+            return 40;
+        };
+        var pt = function (deg, r) { var t = (deg - 90) * Math.PI / 180; return [cx + r * Math.cos(t), cy + r * Math.sin(t)]; };
+        x.clearRect(0, 0, w, h);
+        x.fillStyle = '#f3ead3';
+        x.fillRect(0, 0, w, h);
+        var arc = function (a0, a1, r, col, lw) {
+            x.beginPath();
+            x.strokeStyle = col;
+            x.lineWidth = lw;
+            x.arc(cx, cy, r, (a0 - 90) * Math.PI / 180, (a1 - 90) * Math.PI / 180);
+            x.stroke();
+        };
+        arc(-48, -6, rad - 3, '#2a8f4f', 5);
+        arc(-6, 13, rad - 3, '#d9a520', 5);
+        arc(13, 40, rad, '#d22', 7);
+        x.font = '11px Georgia, serif';
+        x.textAlign = 'center';
+        marks.forEach(function (m) {
+            var a = pt(m[1], rad), b = pt(m[1], rad - 11), t = pt(m[1], rad + 12);
+            x.beginPath();
+            x.strokeStyle = m[0] > 0 ? '#c11' : '#222';
+            x.lineWidth = 2;
+            x.moveTo(a[0], a[1]);
+            x.lineTo(b[0], b[1]);
+            x.stroke();
+            x.fillStyle = m[0] > 0 ? '#c11' : '#222';
+            x.fillText((m[0] > 0 ? '+' : '') + m[0], t[0], t[1] + 4);
+        });
+        x.font = 'bold 15px Georgia, serif';
+        x.fillStyle = '#222';
+        x.fillText('VU', cx, h - 14);
+        var n = pt(ang(vu), rad - 4);
+        x.beginPath();
+        x.strokeStyle = '#111';
+        x.lineWidth = 2;
+        x.moveTo(cx, cy);
+        x.lineTo(n[0], n[1]);
+        x.stroke();
+        var lamp = $id('alPeakLamp');
+        if (lamp) {
+            lamp.classList.toggle('al-lamp-on', !!peakOn);
+            lamp.classList.toggle('al-lamp-off', !peakOn);
+        }
+    }
+
+    function drawLeds(l, r) {
+        var c = $id('alLeds');
+        if (!c) { return; }
+        var x = c.getContext('2d'), n = 24, seg = (c.width - 18) / n;
+        x.clearRect(0, 0, c.width, c.height);
+        [[l, 2, 'L'], [r, 19, 'R']].forEach(function (row) {
+            x.fillStyle = getComputedStyle(c).color;
+            x.font = '10px sans-serif';
+            x.fillText(row[2], 0, row[1] + 10);
+            // -30 .. +3 VU across the segments
+            var lit = Math.round((Math.max(-30, Math.min(3, row[0])) + 30) / 33 * n);
+            for (var i = 0; i < n; i++) {
+                var col = i < 15 ? '#2fb36b' : i < 20 ? '#e6b33c' : '#e04646';
+                x.fillStyle = i < lit ? col : 'rgba(127,127,127,.25)';
+                x.fillRect(14 + i * seg, row[1], seg - 2, 12);
+            }
+        });
+    }
+
+    // VU ballistics: about 300 ms to settle, like an analog meter. 0 VU sits at
+    // -18 dBFS RMS (the usual broadcast alignment); Peak lights at -1 dBFS.
+    function meterLoop(ts) {
+        meter.raf = 0;
+        var a = player.analysers;
+        if (!a || tab !== 'eq') { return; }
+        var dt = meter.last ? Math.min(0.1, (ts - meter.last) / 1000) : 0.016;
+        meter.last = ts;
+        var k = 1 - Math.exp(-dt / 0.3);
+        var levels = a.map(function (an) {
+            var buf = new Float32Array(an.fftSize);
+            an.getFloatTimeDomainData(buf);
+            var sum = 0, pk = 0;
+            for (var i = 0; i < buf.length; i++) { sum += buf[i] * buf[i]; pk = Math.max(pk, Math.abs(buf[i])); }
+            if (pk >= 0.89) { meter.peakUntil = Date.now() + 1000; }
+            return 20 * Math.log10(Math.sqrt(sum / buf.length) + 1e-9) + 18;
+        });
+        meter.l += (levels[0] - meter.l) * k;
+        meter.r += ((levels[1] === undefined ? levels[0] : levels[1]) - meter.r) * k;
+        meter.vu = Math.max(meter.l, meter.r);
+        drawVu(meter.vu, meter.peakUntil > Date.now());
+        drawLeds(meter.l, meter.r);
+        meter.raf = requestAnimationFrame(meterLoop);
+    }
+
+    function startMeter() {
+        if (!meter.raf && tab === 'eq' && player.analysers) { meter.last = 0; meter.raf = requestAnimationFrame(meterLoop); }
+    }
+
+    function resetMeter() {
+        meter.vu = -40; meter.l = meter.r = -60;
+        drawVu(meter.vu, false);
+        drawLeds(-60, -60);
     }
 
     /* ---------------- wiring ---------------- */

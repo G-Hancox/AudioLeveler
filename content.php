@@ -137,6 +137,9 @@ function AudioLevelerHelp($tip)
                             <button id="alTabInfo" type="button" class="nav-link" role="tab" aria-selected="false" data-tab="info">
                                 Song info <span id="alInfoBadge" class="badge rounded-pill text-bg-warning fw-normal d-none">0</span></button>
                         </li>
+                        <li class="nav-item" role="presentation">
+                            <button id="alTabEq" type="button" class="nav-link" role="tab" aria-selected="false" data-tab="eq">Audio EQ</button>
+                        </li>
                     </ul>
                     <div class="d-flex gap-2 mb-1 al-list-only">
                         <button id="alScan" type="button" class="buttons btn btn-outline-primary" title="Looks in the folder again, for files uploaded since this page opened">Scan for songs</button>
@@ -158,6 +161,7 @@ function AudioLevelerHelp($tip)
                     <div id="alResult" class="d-none mb-3"></div>
 
                     <div id="alInfoPanel" class="al-info-only"></div>
+                    <div id="alEqPanel" class="al-eq-only"></div>
 
                     <div class="al-list-only">
                     <p class="small text-body-secondary mb-3">
@@ -250,7 +254,7 @@ function AudioLevelerHelp($tip)
                         <div class="form-check mb-0">
                             <input id="alPlayShow" class="form-check-input" type="checkbox">
                             <label class="form-check-label small ms-2" for="alPlayShow">Play through the show</label>
-                            <?php AudioLevelerHelp('Plays it out FPP\'s own audio (your speakers and FM), exactly as the show will. Only while no show is playing; if a show starts, the preview stops. Off: it plays here in your browser.'); ?>
+                            <?php AudioLevelerHelp('Plays it out FPP\'s own audio (your speakers and FM), exactly as the show will, as a temporary playlist so an FM transmitter set to mute when idle unmutes. Only while no show is playing and not just before a scheduled one; if a show starts, the preview stops. Off: it plays here in your browser.'); ?>
                         </div>
                     </div>
                 </div>

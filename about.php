@@ -132,7 +132,15 @@
             <p>Every row has a <b>&#9654;</b> button. A player bar appears at the bottom of the list while it plays, with <b>Stop</b>, <b>Next</b> (to hear
                how two songs sit side by side) and the time. It plays in your browser by default, safe during a show. <b>Leveled</b> / <b>Original</b>
                lets you hear a song with and without its Normalize setting. <b>Play through the show</b> plays it out FPP's own speakers and FM exactly as
-               the show will, but only while no show is playing; if a show starts, the preview stops.</p>
+               the show will, as a temporary one-song playlist (so K-FMT unmutes for it), but only while no show is playing and not just before a scheduled one; if a show starts, the preview stops.</p>
+
+            <h6 class="fw-semibold">Audio EQ</h6>
+            <p>The <b>Audio EQ</b> tab drives FPP 10.4's own 5-band Parametric EQ. Ticking <b>EQ on</b> switches FPP's audio to Advanced with the EQ on
+               your sound card (reboot); unticking puts FPP's audio settings back exactly as they were (reboot). Pick a preset (FM Clear, Bass Boost,
+               Loudness, Vocal, Rock, Pop, Old Radio, Flat) or move the sliders: changes play live, <b>Save</b> keeps them, and leaving without saving puts
+               back what was saved. Your settings are remembered while it's off. A test song plays in your browser through the same EQ with a VU meter,
+               and with K-FMT a TX lamp shows the transmitter's peak. It won't change anything while a show is playing; turning sliders up can overdrive
+               a transmitter.</p>
 
             <h6 class="fw-semibold">Song info (Title and Artist)</h6>
             <p>The <b>Song info</b> tab shows each song's Title and Artist: what FPP shows while it plays, and what an FM transmitter plugin sends to car

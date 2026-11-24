@@ -38,6 +38,14 @@
 			{
 				"kind": "core-settings",
 				"what": "Rewrites a song only without Normalize (10.0-10.3), for the limiter or compression (backed up), or to fix an MP3's timing tag or Title/Artist."
+			},
+			{
+				"kind": "core-settings",
+				"what": "Audio EQ tab, only when ticked: switches FPP's audio to Advanced with its own EQ on your sound card; unticking puts it all back (reboot)."
+			},
+			{
+				"kind": "core-settings",
+				"what": "Play through the show makes a temporary playlist, AudioLeveler-Preview, for the song being played; it's removed when the song stops."
 			}
 		],
 		"closedCode": false,

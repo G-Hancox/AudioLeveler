@@ -89,8 +89,18 @@ Every row (Songs, Videos and Song info) has a **▶** button. A player bar appea
 
 - **In your browser** (the default): the song streams from FPP's own file API, the same way File Manager's Listen does, so it's safe during a show and nothing goes out over FM. Seeking works on FPP 10.4+; on older versions a song plays from the start until it has loaded.
 - **Leveled / Original**: for a song FPP's Normalize turns up or down, **Leveled** applies that same volume in the browser, so it sounds as the show will play it, and **Original** is the file as uploaded. Songs whose file was rewritten (limiter, compression) just play as they are now.
-- **Play through the show**: plays the song out FPP's own audio (your speakers and FM) with fppd's Play Media command, which applies the song's Normalize setting itself, so it's exactly what the show will sound like. It's only allowed while no show is playing (the plugin checks before playing); if a show starts, the preview stops. Through the show it always plays leveled.
+- **Play through the show**: plays the song out FPP's own audio (your speakers and FM), applying its Normalize setting the same way the show does, so it's exactly what the show will sound like. A song plays as a one-song temporary playlist, `AudioLeveler-Preview` (so an FM transmitter plugin set to mute when idle, like K-FMT, unmutes for it), which is removed when it stops; a video uses fppd's Play Media. It's only allowed while no show is playing, and not when a scheduled show is due to start before the song would finish (it plays in your browser instead). If a show starts, the preview stops. Through the show it always plays leveled.
 - It plays at your device's volume: it's for comparing songs, not for setting how loud the show is.
+
+## Audio EQ
+
+The **Audio EQ** tab is a front end for FPP 10.4's own 5-band Parametric EQ (the one under Audio/Video Output in Advanced mode), so you can shape the show's sound, for an FM transmitter say, without learning FPP's audio groups. It uses FPP's own bands (60 Hz low shelf, 250 Hz, 1 kHz, 4 kHz, 12 kHz high shelf, ±12 dB) and FPP's own live update, so nothing new runs on the Pi.
+
+- **EQ on** switches FPP's audio to Advanced (Full PipeWire) with the EQ on your sound card, and needs a reboot. **Unticking it puts FPP's audio settings back exactly as they were** (Simple mode, the groups file as it was), with another reboot. If you were already in Advanced mode, it uses your first group's card and leaves the mode alone. The ? beside it has the warnings.
+- **Presets**: FM Clear, Bass Boost, Loudness, Vocal, Rock, Pop, Old Radio and Flat. Sliders change the sound live while the EQ is on; **Save** keeps it (restarting FPP's audio), and leaving the tab without saving puts back what was saved. The plugin remembers your settings while the EQ is off, like any plugin setting; FPP itself is left untouched.
+- **Test song**: plays a song in your browser through the same EQ (Before / After to compare), with an analog-style VU meter (green, yellow, red, and a peak lamp at about −1 dBFS). With K-FMT installed, a **TX** lamp shows the transmitter's own peak reading (read-only).
+- On/off and Save restart FPP's audio, so they're refused while a show is playing. Turning sliders up makes the signal hotter and can overdrive a transmitter; several presets cut more than they boost, so the show may sound a little quieter.
+- Needs FPP 10.4 or later (the tab says so on older versions). Uninstalling the plugin while the EQ is on puts FPP's audio back the same way.
 
 ## Videos
 
