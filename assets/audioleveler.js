@@ -1126,18 +1126,20 @@
 
     function playButtonHtml(name) {
         var on = player.name === name;
-        return '<button type="button" class="btn btn-sm btn-outline-secondary al-play me-1' + (on ? ' active' : '') + '" data-n="' + esc(name) + '"' +
-            ' aria-label="' + (on ? 'Stop ' : 'Play ') + esc(name) + '" title="' + (on ? 'Stop' : 'Listen') + '">' +
-            (on ? '&#9632;' : '&#9654;') + '</button>';
+        // FPP's own player controls: a green play, a red stop.
+        return '<button type="button" class="buttons btn btn-sm al-play me-1 ' + (on ? 'btn-outline-danger' : 'btn-outline-success') + '"' +
+            ' data-n="' + esc(name) + '" aria-label="' + (on ? 'Stop ' : 'Play ') + esc(name) + '" title="' + (on ? 'Stop' : 'Listen') + '">' +
+            '<i class="fas fa-fw ' + (on ? 'fa-stop' : 'fa-play') + '"></i></button>';
     }
 
     function refreshPlayButtons() {
         Array.prototype.forEach.call(document.querySelectorAll('#audioLeveler .al-play'), function (b) {
             var on = player.name === b.getAttribute('data-n');
-            b.innerHTML = on ? '&#9632;' : '&#9654;';
+            b.innerHTML = '<i class="fas fa-fw ' + (on ? 'fa-stop' : 'fa-play') + '"></i>';
             b.title = on ? 'Stop' : 'Listen';
             b.setAttribute('aria-label', (on ? 'Stop ' : 'Play ') + b.getAttribute('data-n'));
-            b.classList.toggle('active', on);
+            b.classList.toggle('btn-outline-success', !on);
+            b.classList.toggle('btn-outline-danger', on);
         });
     }
 

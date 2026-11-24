@@ -236,8 +236,8 @@ function AudioLevelerHelp($tip)
                 <!-- Player: shown only while a song plays (a row's play button). -->
                 <div id="alPlayer" class="al-player card-footer d-none">
                     <div class="d-flex flex-wrap align-items-center gap-2">
-                        <button id="alPlayStop" type="button" class="btn btn-sm btn-danger" aria-label="Stop">&#9632; Stop</button>
-                        <button id="alPlayNext" type="button" class="btn btn-sm btn-outline-secondary" title="Play the next song in the list">&#9197; Next</button>
+                        <button id="alPlayStop" type="button" class="buttons btn btn-sm btn-outline-danger"><i class="fas fa-fw fa-stop"></i> Stop</button>
+                        <button id="alPlayNext" type="button" class="buttons btn btn-sm btn-outline-secondary" title="Play the next song in the list"><i class="fas fa-fw fa-step-forward"></i> Next</button>
                         <div class="flex-grow-1" style="min-width: 10rem">
                             <div id="alPlayName" class="small text-truncate fw-semibold"></div>
                             <input id="alPlaySeek" type="range" class="form-range" min="0" max="1000" value="0" aria-label="Position in the song">
@@ -247,9 +247,9 @@ function AudioLevelerHelp($tip)
                             <button type="button" class="btn btn-outline-secondary" data-mode="leveled" aria-pressed="true">Leveled</button>
                             <button type="button" class="btn btn-outline-secondary" data-mode="original" aria-pressed="false">Original</button>
                         </div>
-                        <div class="form-check form-switch mb-0">
-                            <input id="alPlayShow" class="form-check-input" type="checkbox" role="switch">
-                            <label class="form-check-label small" for="alPlayShow">Play through the show</label>
+                        <div class="form-check mb-0">
+                            <input id="alPlayShow" class="form-check-input" type="checkbox">
+                            <label class="form-check-label small ms-2" for="alPlayShow">Play through the show</label>
                             <?php AudioLevelerHelp('Plays it out FPP\'s own audio (your speakers and FM), exactly as the show will. Only while no show is playing; if a show starts, the preview stops. Off: it plays here in your browser.'); ?>
                         </div>
                     </div>

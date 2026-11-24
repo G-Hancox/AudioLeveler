@@ -96,4 +96,4 @@
 
 /* Player bar: stays in view at the bottom while a song plays */
 #alPlayer.al-player {position: sticky; bottom: 0; z-index: 3; background-color: var(--bs-tertiary-bg)}
-#audioLeveler .al-play {width: 1.75rem; line-height: 1}
+#audioLeveler .al-play {padding: .15rem .4rem; line-height: 1.2}
