@@ -1599,7 +1599,7 @@
         var matching = EQ_PRESETS.filter(function (p) { return p[2].join() === eq.gains.join(); })[0];
         var mineOn = eq.presets.some(function (p) { return p.gains.join() === eq.gains.join(); });
         if (!matching && !mineOn) { matching = ['custom']; }
-        el.querySelector('[data-preset="custom"]').disabled = !eq.custom && matching[0] !== 'custom';
+        el.querySelector('[data-preset="custom"]').disabled = !eq.custom && !(matching && matching[0] === 'custom');
         Array.prototype.forEach.call(el.querySelectorAll('[data-preset]'), function (b) {
             var on = matching && matching[0] === b.getAttribute('data-preset');
             b.classList.toggle('btn-success', !!on);
@@ -1733,6 +1733,15 @@
         return { gains: eq.gains.slice(), preset: eq.preset, custom: eq.custom || undefined };
     }
 
+    // The name of what these gains are: a preset, one of yours, or Custom.
+    function eqPresetName(g) {
+        var k = g.join();
+        var p = EQ_PRESETS.filter(function (x) { return x[2].join() === k; })[0];
+        if (p) { return p[1]; }
+        var m = eq.presets.filter(function (x) { return x.gains.join() === k; })[0];
+        return m ? m.name : 'Custom';
+    }
+
     function eqAutoSave() {
         if (eq.saving || (!eqDirty() && !eqNeedsFpp())) { return; }
         var body = eqSaveBody();
@@ -1740,21 +1749,34 @@
         // see it, so say so and it only remembers.
         if (player.mode === 'show' && player.name) { body.hold = true; }
         eq.saving = true;
+        var started = Date.now();
         renderEq();
+        var name = eqPresetName(body.gains);
         api('POST', 'eq/save', body).then(function (j) {
             eq.saved = body.gains;
             if (j.fppGains) { eq.fppGains = j.fppGains.slice(); }
+            // FPP's usual save notice (jGrowl), saying where it went.
+            if (j.applied) {
+                toast('EQ saved to FPP: ' + name + '.');
+            } else if (eq.mode === 'show' && !eq.rebootPending) {
+                toast('EQ saved: ' + name + '. It goes into FPP\'s own settings when the playing stops.');
+            } else {
+                toast('EQ saved: ' + name + (eq.mode === 'show' ? ', live after the reboot.' : ', for when you go Live.'));
+            }
         }).catch(function (ex) { toast(ex.message, false); }).then(function () {
-            eq.saving = false;
-            renderEq();
-            if (eqDirty() && !eq.saveTimer) { eqQueueSave(); }
+            // ON AIR stays out long enough to see it blink, then comes back.
+            setTimeout(function () {
+                eq.saving = false;
+                renderEq();
+                if (eqDirty() && !eq.saveTimer) { eqQueueSave(); }
+            }, Math.max(0, 800 - (Date.now() - started)));
         });
     }
 
     // The ON AIR sign, like a radio studio's: lit green while the EQ is live
-    // in the show and kept; dark while it's being saved into FPP (its audio
-    // restarts for a few seconds), and when it isn't on air at all. The
-    // details are in its tooltip.
+    // in the show and kept; out while a change is being saved (and back on
+    // when it's done), and when it isn't on air at all. The details are in
+    // its tooltip.
     function eqOnAir() {
         var el = $id('alOnAir');
         if (!el) { return; }
@@ -1763,11 +1785,11 @@
             tip = eq.mode === 'try' ? 'Preview: in your browser only, not on air. Your pick is kept for when you go Live.' : 'The EQ is off.';
         } else if (eq.rebootPending) {
             tip = 'Not on air yet: reboot FPP to finish. Your pick is kept.';
-        } else if (eq.saving && eq.fppQuiet) {
-            tip = 'Saving into FPP: its audio restarts for a few seconds.';
-        } else if (eqDirty() || eq.saveTimer || eq.saving) {
+        } else if (eq.saving) {
+            tip = eq.fppQuiet ? 'Saving into FPP: its audio restarts for a few seconds.' : 'Saving…';
+        } else if (eqDirty() || eq.saveTimer) {
             lit = true;
-            tip = 'On air. Saving your pick…';
+            tip = 'On air. Saving your pick in a moment…';
         } else if (eqNeedsFpp()) {
             lit = true;
             tip = 'On air and kept. It goes into FPP\'s own settings by itself when the playing stops (that restarts FPP\'s audio for a few seconds).';
