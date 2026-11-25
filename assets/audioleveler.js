@@ -1464,6 +1464,8 @@
             eq.on = !!j.on;
             eq.rebootPending = !!j.rebootPending;
             eq.cardName = j.cardName || j.cardId || '';
+            eq.cardId = j.cardId || '';
+            eq.groupId = j.groupId || 0;
             eq.kfmt = !!j.kfmt;
             eq.showRunning = j.idle === false;
             if (!eqDirty()) { eq.gains = (j.gains || [0, 0, 0, 0, 0]).slice(); }
@@ -1474,6 +1476,7 @@
             if (eq.on) { eq.mode = 'show'; } else if (eq.mode === 'show') { eq.mode = 'off'; }
             applyEqToPlayer();
             renderEq();
+            fppMeterSync();
         }).catch(function (e) { toast(e.message, false); });
     }
 
@@ -1519,7 +1522,8 @@
                 '<button id="alEqSave" type="button" class="buttons btn btn-sm btn-success">Save</button></div>' +
                 '</div></div>' +
                 '<div class="col-12 col-lg-5"><div class="rounded border p-3 h-100">' +
-                '<div class="d-flex align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase me-auto">Level</span>' +
+                '<div class="d-flex align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase">Level</span>' +
+                '<span id="alEqMeterSrc" class="small text-body-secondary me-auto"></span>' +
                 '<span id="alEqMeterHelp"></span></div>' +
                 '<canvas id="alVu" class="al-vu" width="360" height="170" aria-label="VU meter"></canvas>' +
                 '<div class="d-flex align-items-center gap-3 mt-2 small">' +
@@ -1823,8 +1827,10 @@
         $id('alTxClear').addEventListener('click', function () {
             fetch('/api/plugin-apis/kfmt/clearpeak', { method: 'POST' }).then(pollTx).catch(function () { /* not there */ });
         });
-        $id('alEqMeterHelp').innerHTML = helpIconHtml('The needle shows the song the player is playing, with its Normalize setting and this EQ, ' +
-            'before FPP\'s volume. Around 0 is a healthy level; red is hot. <b>Peak</b> flashes on the loudest moments.');
+        $id('alEqMeterHelp').innerHTML = helpIconHtml('A test song playing here: the needle shows it with its Normalize setting and this EQ, before FPP\'s volume. ' +
+            'When the EQ is <b>Live</b>: it shows what FPP is really sending to the sound card, after the EQ (FPP\'s own meter, as on its Audio Mixer), ' +
+            'only while this tab is on screen. Around 0 is a healthy level; red is hot. <b>Peak</b> flashes on the loudest moments ' +
+            '(for FPP\'s meter, at FPP\'s own hot mark).');
         $id('alTxHelp').innerHTML = helpIconHtml('Lights red when the K-FMT\'s own input reading hits the top. Read only: it is only cleared when you press Clear TX, ' +
             'the same as on the K-FMT page. A brief flash is usually fine; red most of the time means turn down.');
         initTips(el);
@@ -1846,7 +1852,8 @@
     function eqStartPolling() {
         if (eq.statusTimer) { return; }
         eq.statusTimer = setInterval(function () {
-            if (tab !== 'eq') { clearInterval(eq.statusTimer); eq.statusTimer = null; return; }
+            if (tab !== 'eq') { clearInterval(eq.statusTimer); eq.statusTimer = null; fppMeterSync(); return; }
+            fppMeterSync();
             fetch('/api/fppd/status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (st) {
                 var cur = st && st.current_playlist && st.current_playlist.playlist;
                 var was = eq.showRunning;
@@ -1864,6 +1871,7 @@
         eqRevertIfDirty(false);
         eq.gains = eq.saved.slice();
         eq.after = true;   // other tabs hear what FPP plays
+        setTimeout(fppMeterSync, 0);   // after the tab has changed: FPP stops metering
         if (eq.mode === 'try') { eq.mode = 'off'; }
         eq.delAsk = -1;
         $id('alEqConfirm') && $id('alEqConfirm').classList.add('d-none');
@@ -1972,11 +1980,12 @@
     function meterLoop(ts) {
         meter.raf = 0;
         var a = player.analysers;
-        if (!a || tab !== 'eq') { return; }
+        var fpp = fppMeter.on && !(a && player.mode !== 'show');
+        if (tab !== 'eq' || (!a && !fpp)) { return; }
         var dt = meter.last ? Math.min(0.1, (ts - meter.last) / 1000) : 0.016;
         meter.last = ts;
         var k = 1 - Math.exp(-dt / 0.3);
-        var levels = a.map(function (an) {
+        var levels = fpp ? fppLevels() : a.map(function (an) {
             var buf = new Float32Array(an.fftSize);
             an.getFloatTimeDomainData(buf);
             var sum = 0, pk = 0;
@@ -1993,7 +2002,90 @@
     }
 
     function startMeter() {
-        if (!meter.raf && tab === 'eq' && player.analysers) { meter.last = 0; meter.raf = requestAnimationFrame(meterLoop); }
+        if (!meter.raf && tab === 'eq' && (player.analysers || fppMeter.on)) { meter.last = 0; meter.raf = requestAnimationFrame(meterLoop); }
+        meterSource();
+    }
+
+    /* FPP's own meter of the card, while the EQ is live and this tab is on
+       screen: the same meters FPP's Audio Mixer shows, asked for the same way
+       (POST pipewire/audio/meters, re-posted every 3 s with a 6 s TTL, so
+       fppd stops metering by itself when the page goes away) and read from
+       FPP's status WebSocket, which FPP's own page script hands to
+       window.PWMixerOnLevels. Nothing meters while the tab is hidden or
+       you're on another tab. Levels are RMS on FPP's -60..0 dBFS scale. */
+    var fppMeter = { on: false, timer: null, node: '', level: null, at: 0, since: 0, hooked: false };
+    document.addEventListener('visibilitychange', function () { fppMeterSync(); });
+
+    function fppMeterWanted() {
+        return tab === 'eq' && eq.on && !eq.rebootPending && !!eq.cardId && eq.groupId > 0 &&
+            !document.hidden && typeof window.startFppdWS === 'function';
+    }
+
+    function fppMeterPost(nodes, ttl) {
+        return fetch('/api/pipewire/audio/meters', {
+            method: 'POST', keepalive: true, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nodes: nodes, ttl: ttl })
+        }).catch(function () { /* fppd down: no levels */ });
+    }
+
+    function fppMeterSync() {
+        if (fppMeterWanted() === fppMeter.on) { meterSource(); return; }
+        if (!fppMeter.on) {
+            if (!fppMeter.hooked) {
+                var prev = window.PWMixerOnLevels;
+                window.PWMixerOnLevels = function (levels) {
+                    if (fppMeter.on && levels && typeof levels[fppMeter.node] === 'number') {
+                        fppMeter.level = levels[fppMeter.node];
+                        fppMeter.at = Date.now();
+                    }
+                    if (typeof prev === 'function') { prev(levels); }
+                };
+                fppMeter.hooked = true;
+            }
+            // The card's output after its EQ, named the way FPP's mixer names it.
+            fppMeter.node = 'fpp_fx_g' + eq.groupId + '_' + String(eq.cardId).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+            fppMeter.on = true;
+            fppMeter.level = null;
+            fppMeter.since = Date.now();
+            var sub = function () { fppMeterPost([{ name: fppMeter.node, sink: true }], 6000); };
+            sub();
+            fppMeter.timer = setInterval(sub, 3000);
+            startMeter();
+        } else {
+            clearInterval(fppMeter.timer);
+            fppMeter.timer = null;
+            fppMeter.on = false;
+            fppMeter.level = null;
+            fppMeterPost([], 0);
+            if (!player.analysers) { resetMeter(); }
+        }
+        meterSource();
+    }
+
+    // FPP's level as the meter's L and R (FPP reports one level per node).
+    function fppLevels() {
+        var fresh = typeof fppMeter.level === 'number' && Date.now() - fppMeter.at < 1000;
+        var pct = fresh ? fppMeter.level : 0;
+        if (pct >= 90) { meter.peakUntil = Date.now() + 1000; }   // FPP's own "hot" mark, -6 dBFS RMS
+        var vu = pct * 0.6 - 60 + 18;
+        return [vu, vu];
+    }
+
+    // What the meter is showing, above it.
+    function meterSource() {
+        var el = $id('alEqMeterSrc');
+        if (!el) { return; }
+        var a = player.analysers && player.mode !== 'show';
+        var txt = '';
+        if (a) {
+            txt = '&middot; test song, in your browser';
+        } else if (fppMeter.on) {
+            var waiting = !(fppMeter.at > fppMeter.since) && Date.now() - fppMeter.since > 6000;
+            txt = waiting ? '&middot; FPP isn\'t sending a level for this card' : '&middot; <b>FPP\'s output, live</b>';
+        } else if (eq.on && eq.rebootPending) {
+            txt = '&middot; FPP\'s meter shows here after the reboot';
+        }
+        el.innerHTML = txt;
     }
 
     function resetMeter() {

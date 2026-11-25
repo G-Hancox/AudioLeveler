@@ -1518,6 +1518,9 @@ function AudioLevelerEqState()
     if ($card) {
         $out['cardId'] = $card['cardId'];
         $out['cardName'] = $card['cardId'];
+        if ($d['on'] && isset($d['groupId'])) {
+            $out['groupId'] = intval($d['groupId']);   // for FPP's own meter of this card
+        }
         list($code, $cards) = AudioLevelerFppApi('GET', 'pipewire/audio/cards');
         foreach (is_array($cards) ? $cards : array() as $c) {
             if (is_array($c) && isset($c['cardId']) && $c['cardId'] === $card['cardId']) {
