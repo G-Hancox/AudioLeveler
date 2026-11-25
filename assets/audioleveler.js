@@ -1511,7 +1511,7 @@
                 '<span id="alEqMineFull" class="small text-body-secondary d-none">8 saved: delete one to add another.</span>' +
                 '</div>' +
                 '<div class="row g-3">' +
-                '<div class="col-12 col-lg-7"><div class="rounded border p-3 h-100">' +
+                '<div class="col-12 col-lg-7"><div class="al-hifi p-3 h-100">' +
                 '<div class="d-flex justify-content-center mb-3"><span class="al-onair-frame"><span id="alOnAir" class="al-onair" role="status" aria-live="polite">On Air</span></span></div>' +
                 '<div class="d-flex flex-wrap align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase me-auto">Equalizer (dB)</span>' +
                 '<span id="alEqAB" class="btn-group btn-group-sm" role="group" aria-label="Hear the EQ">' +
@@ -1523,7 +1523,7 @@
                         '<span class="small text-body-secondary">' + f + '</span></div>';
                 }).join('') + '</div>' +
                                 '</div></div>' +
-                '<div class="col-12 col-lg-5"><div class="rounded border p-3 h-100">' +
+                '<div class="col-12 col-lg-5"><div class="al-hifi p-3 h-100">' +
                 '<div class="d-flex align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase">Level</span>' +
                 '<span id="alEqMeterSrc" class="small text-body-secondary me-auto"></span>' +
                 '<span id="alEqMeterHelp"></span></div>' +

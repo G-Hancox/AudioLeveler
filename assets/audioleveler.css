@@ -101,25 +101,83 @@
 /* Audio EQ tab: its own panel; the leveling list hides meanwhile */
 #audioLeveler:not(.al-tab-eq) .al-eq-only, #audioLeveler.al-tab-eq .al-list-only {display:none !important}
 #alEqPanel .al-eq-sliders {min-height: 200px}
-/* Faders: a thin track and a flat knob, like a hardware EQ */
+
+/* ---- Audio EQ: an old hi-fi faceplate ----
+   Every colour is a variable, set once for FPP's light theme (a brushed
+   silver faceplate, dark engraved lettering) and once for its dark theme
+   ([data-bs-theme="dark"]: dark bronze, cream lettering), per FPP's plugin
+   guidelines 8.2/8.5. Only the meter's face and the ON AIR lamp are drawn the
+   same in both: they're pictures of lit equipment, like an image. */
+#audioLeveler {
+    --al-plate-1: #ece7dc; --al-plate-2: #cfc7b6; --al-plate-line: rgba(255, 255, 255, .35);
+    --al-plate-edge: #a89b83; --al-plate-hi: rgba(255, 255, 255, .7); --al-plate-lo: rgba(60, 45, 20, .25);
+    --al-screw-1: #f5ecd6; --al-screw-2: #8f7d5c;
+    --al-engrave: #3b2f1f; --al-engrave-shadow: rgba(255, 255, 255, .6);
+    --al-readout: #9a4f00; --al-readout-glow: rgba(255, 170, 60, .25);
+    --al-slot: #2a241c; --al-slot-edge: #8f8270;
+    --al-cap-1: #fbf5e6; --al-cap-2: #e8dcbd; --al-cap-3: #d6c49a; --al-cap-4: #bba679; --al-cap-line: #2a1c0e; --al-cap-edge: #7d6a48;
+    --al-key-text: #3b2f1f; --al-key-bg: #f3eee3; --al-key-edge: #a89b83;
+    --al-key-on-1: #f0d9a4; --al-key-on-2: #c9a463; --al-key-on-text: #1b140b; --al-key-on-edge: #8a6c3a;
+    --al-bezel: #1b1612; --al-bezel-edge: #4a3d33; --al-bezel-glow: rgba(255, 190, 90, .35);
+    --al-shadow: rgba(0, 0, 0, .35);
+    --al-lamp-edge: #000; --al-peak-off: #5a1a1a; --al-peak-on: #ff4040; --al-peak-glow: #ff3030; --al-tx-off: #1f6b3f;
+}
+[data-bs-theme="dark"] #audioLeveler {
+    --al-plate-1: #2e2820; --al-plate-2: #1d1914; --al-plate-line: rgba(255, 240, 210, .025);
+    --al-plate-edge: #4d3f2c; --al-plate-hi: rgba(255, 230, 180, .12); --al-plate-lo: rgba(0, 0, 0, .5);
+    --al-screw-1: #a88d5c; --al-screw-2: #4a3a22;
+    --al-engrave: #d9c79c; --al-engrave-shadow: rgba(0, 0, 0, .85);
+    --al-readout: #ffb54a; --al-readout-glow: rgba(255, 160, 40, .65);
+    --al-slot: #0c0a08; --al-slot-edge: #4a3d2b;
+    --al-cap-1: #f7eed8; --al-cap-2: #e4d4ad; --al-cap-3: #d2bd8d; --al-cap-4: #b9a272; --al-cap-line: #2a1c0e; --al-cap-edge: #6b5636;
+    --al-key-text: #d9c79c; --al-key-bg: #17130f; --al-key-edge: #5a4a33;
+    --al-shadow: rgba(0, 0, 0, .5);
+}
+
+/* Faders: a slot and an ivory cap with a black index line */
 #alEqPanel .al-eq-slider {writing-mode: vertical-lr; direction: rtl; width: 30px; height: 150px; padding: 0;
     -webkit-appearance: none; appearance: none; background: transparent}
-#alEqPanel .al-eq-slider::-webkit-slider-runnable-track {width: 6px; height: 100%; margin: 0 auto; background: #14171a;
-    border: 1px solid #555c64; border-radius: 4px}
-#alEqPanel .al-eq-slider::-webkit-slider-thumb {-webkit-appearance: none; appearance: none; width: 30px; height: 14px;
-    margin-left: -13px; border-radius: 3px; border: 0; background: linear-gradient(#e1e4e7, #9aa1a8); box-shadow: 0 1px 3px #000}
-#alEqPanel .al-eq-slider::-moz-range-track {width: 6px; background: #14171a; border: 1px solid #555c64; border-radius: 4px}
-#alEqPanel .al-eq-slider::-moz-range-thumb {width: 30px; height: 14px; border-radius: 3px; border: 0;
-    background: linear-gradient(#e1e4e7, #9aa1a8); box-shadow: 0 1px 3px #000}
+#alEqPanel .al-eq-slider::-webkit-slider-runnable-track {width: 6px; height: 100%; margin: 0 auto; border-radius: 4px;
+    background: var(--al-slot); border: 1px solid var(--al-slot-edge); box-shadow: inset 0 1px 3px var(--al-shadow)}
+#alEqPanel .al-eq-slider::-moz-range-track {width: 6px; border-radius: 4px; background: var(--al-slot); border: 1px solid var(--al-slot-edge)}
+#alEqPanel .al-eq-slider::-webkit-slider-thumb {-webkit-appearance: none; appearance: none; width: 30px; height: 18px;
+    margin-left: -13px; border-radius: 2px; border: 1px solid var(--al-cap-edge);
+    background: linear-gradient(var(--al-cap-1) 0, var(--al-cap-2) 42%, var(--al-cap-line) 42%, var(--al-cap-line) 58%, var(--al-cap-3) 58%, var(--al-cap-4) 100%);
+    box-shadow: 0 2px 4px var(--al-shadow)}
+#alEqPanel .al-eq-slider::-moz-range-thumb {width: 30px; height: 18px; border-radius: 2px; border: 1px solid var(--al-cap-edge);
+    background: linear-gradient(var(--al-cap-1) 0, var(--al-cap-2) 42%, var(--al-cap-line) 42%, var(--al-cap-line) 58%, var(--al-cap-3) 58%, var(--al-cap-4) 100%);
+    box-shadow: 0 2px 4px var(--al-shadow)}
 #alEqPanel .al-eq-slider:focus-visible::-webkit-slider-thumb {outline: 2px solid var(--bs-primary)}
+
+/* The faceplate: brushed, with four screws */
+#alEqPanel .al-hifi {position: relative; border-radius: 8px; color: var(--al-engrave); border: 1px solid var(--al-plate-edge);
+    background:
+        radial-gradient(circle at 10px 10px, var(--al-screw-1) 0 2px, var(--al-screw-2) 2.6px, transparent 3.4px),
+        radial-gradient(circle at calc(100% - 10px) 10px, var(--al-screw-1) 0 2px, var(--al-screw-2) 2.6px, transparent 3.4px),
+        radial-gradient(circle at 10px calc(100% - 10px), var(--al-screw-1) 0 2px, var(--al-screw-2) 2.6px, transparent 3.4px),
+        radial-gradient(circle at calc(100% - 10px) calc(100% - 10px), var(--al-screw-1) 0 2px, var(--al-screw-2) 2.6px, transparent 3.4px),
+        repeating-linear-gradient(0deg, var(--al-plate-line) 0 1px, transparent 1px 3px),
+        linear-gradient(var(--al-plate-1), var(--al-plate-2));
+    box-shadow: inset 0 1px 0 var(--al-plate-hi), inset 0 -1px 0 var(--al-plate-lo), 0 2px 6px var(--al-shadow)}
+#alEqPanel .al-hifi .text-body-secondary,
+#alEqPanel .al-hifi .text-uppercase {color: var(--al-engrave) !important; text-shadow: 0 1px 0 var(--al-engrave-shadow)}
+#alEqPanel .al-hifi .text-uppercase {letter-spacing: .08em}
+#alEqPanel .al-hifi .al-eq-db {color: var(--al-readout); text-shadow: 0 0 6px var(--al-readout-glow)}
+#alEqPanel .al-hifi .btn-outline-secondary {color: var(--al-key-text); border-color: var(--al-key-edge); background: var(--al-key-bg)}
+#alEqPanel .al-hifi .btn-outline-secondary.active {color: var(--al-key-on-text); border-color: var(--al-key-on-edge);
+    background: linear-gradient(var(--al-key-on-1), var(--al-key-on-2)); box-shadow: 0 0 8px var(--al-bezel-glow)}
+#alEqPanel .al-hifi .icon-help {filter: sepia(.9) saturate(1.4)}
+[data-bs-theme="dark"] #alEqPanel .al-hifi .icon-help {filter: sepia(.9) saturate(1.4) brightness(1.15)}
+
+/* Meter, lamps */
 #alEqPanel .al-vu {width: 100%; max-width: 360px; height: auto; display: block; border-radius: 6px;
-    border: 10px solid #1b1612; outline: 1px solid #4a3d33;
-    box-shadow: inset 0 0 0 1px #000, 0 0 18px rgba(255, 190, 90, .35), 0 3px 8px rgba(0, 0, 0, .5)}
-#alEqPanel .al-leds {width: 100%; max-width: 360px; height: auto; color: var(--bs-secondary-color)}
-#alEqPanel .al-lamp {display: inline-block; width: .85rem; height: .85rem; border-radius: 50%; border: 1px solid #000}
-#alEqPanel .al-lamp-off {background: #5a1a1a}
-#alEqPanel .al-lamp-on {background: #ff4040; box-shadow: 0 0 8px #ff3030}
-#alTxLamp.al-lamp-off {background: #1f6b3f}
+    border: 10px solid var(--al-bezel); outline: 1px solid var(--al-bezel-edge);
+    box-shadow: 0 0 18px var(--al-bezel-glow), 0 3px 8px var(--al-shadow)}
+#alEqPanel .al-leds {width: 100%; max-width: 360px; height: auto; color: var(--al-engrave)}
+#alEqPanel .al-lamp {display: inline-block; width: .85rem; height: .85rem; border-radius: 50%; border: 1px solid var(--al-lamp-edge)}
+#alEqPanel .al-lamp-off {background: var(--al-peak-off)}
+#alEqPanel .al-lamp-on {background: var(--al-peak-on); box-shadow: 0 0 8px var(--al-peak-glow)}
+#alTxLamp.al-lamp-off {background: var(--al-tx-off)}
 .al-eq-tip .tooltip-inner {max-width: 26rem; text-align: left}
 #alEqPanel .al-eq-sliders > div {flex: 1 1 0; min-width: 0}
 #alEqPanel .al-eq-sliders .small {white-space: nowrap}
@@ -134,37 +192,46 @@
 #audioLeveler .al-eq-disabled .al-eq-sliders,
 #audioLeveler .al-eq-disabled .text-uppercase,
 #audioLeveler .al-eq-disabled canvas { opacity: .45; }
-#audioLeveler .al-eq-mode .btn.active { background: var(--bs-success); border-color: var(--bs-success); color: #fff; }
+#audioLeveler .al-eq-mode .btn.active { background: var(--bs-success); border-color: var(--bs-success); color: var(--bs-white); }
 #audioLeveler .al-eq-msg { flex: 1 1 16rem; }
-/* Save stays visible when there's nothing to save yet */
-#audioLeveler #alEqSave:disabled { background: transparent; color: var(--bs-secondary-color); border-color: var(--bs-border-color); opacity: 1; }
 
-/* ON AIR sign, an old studio lamp box: a worn brass frame with two screws,
-   and a scuffed, yellowed glass panel. Dark until the EQ is live in the show. */
+/* ON AIR lamp: an old studio lamp box (worn brass, two screws, scuffed
+   glass), dark until the EQ is live in the show. A picture of lit equipment,
+   so the same in both themes; its colours are still variables. */
+#audioLeveler {
+    --al-brass-1: #8a6a3a; --al-brass-2: #5b4222; --al-brass-3: #7d5e31; --al-brass-4: #3e2c16;
+    --al-brass-hi: rgba(255, 225, 160, .35); --al-brass-screw: #d9c08a; --al-brass-screw-2: #6b5128;
+    --al-glass-off-1: #2d2f22; --al-glass-off-2: #1b1c14; --al-glass-off-text: rgba(150, 140, 110, .45);
+    --al-glass-on-1: #59b862; --al-glass-on-2: #2f7d36; --al-glass-on-text: rgba(242, 255, 225, .93);
+    --al-glass-glow: rgba(110, 220, 110, .55); --al-glass-glow-2: rgba(110, 220, 110, .3); --al-glass-text-glow: rgba(120, 230, 120, .8);
+    --al-glass-text-core: rgba(210, 255, 190, .9); --al-glass-sun: rgba(230, 255, 190, .55);
+    --al-grime-1: rgba(120, 90, 30, .35); --al-grime-2: rgba(90, 70, 20, .3); --al-scratch: rgba(255, 255, 255, .03); --al-scratch-on: rgba(255, 255, 230, .08);
+    --al-dark: rgba(0, 0, 0, .6); --al-darker: rgba(0, 0, 0, .85);
+}
 #audioLeveler .al-onair-frame {position: relative; display: inline-block; padding: 5px 14px; border-radius: 5px;
-    background: linear-gradient(160deg, #8a6a3a 0%, #5b4222 35%, #7d5e31 60%, #3e2c16 100%);
-    box-shadow: inset 0 1px 0 rgba(255, 225, 160, .35), inset 0 -1px 2px rgba(0, 0, 0, .6), 0 2px 5px rgba(0, 0, 0, .55)}
+    background: linear-gradient(160deg, var(--al-brass-1) 0%, var(--al-brass-2) 35%, var(--al-brass-3) 60%, var(--al-brass-4) 100%);
+    box-shadow: inset 0 1px 0 var(--al-brass-hi), inset 0 -1px 2px var(--al-dark), 0 2px 5px var(--al-shadow)}
 #audioLeveler .al-onair-frame::before, #audioLeveler .al-onair-frame::after {content: ""; position: absolute; top: 50%; width: 6px; height: 6px;
-    margin-top: -3px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #d9c08a, #6b5128 70%);
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, .5)}
+    margin-top: -3px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, var(--al-brass-screw), var(--al-brass-screw-2) 70%);
+    box-shadow: 0 0 0 1px var(--al-dark)}
 #audioLeveler .al-onair-frame::before {left: 4px}
 #audioLeveler .al-onair-frame::after {right: 4px}
-#audioLeveler .al-onair {display: inline-block; padding: .32rem .95rem; border-radius: 3px; cursor: help;
-    font: 700 .95rem/1 "Arial Black", "Helvetica Neue", Arial, sans-serif; letter-spacing: .16em; text-transform: uppercase;
-    color: rgba(150, 140, 110, .45);
+#audioLeveler .al-onair {display: inline-block; padding: .26rem .8rem; border-radius: 3px; cursor: help;
+    font: 700 .8rem/1 "Arial Black", "Helvetica Neue", Arial, sans-serif; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--al-glass-off-text);
     background:
-        repeating-linear-gradient(115deg, transparent 0 9px, rgba(255, 255, 255, .03) 9px 10px, transparent 10px 23px),
-        radial-gradient(ellipse at 22% 70%, rgba(120, 90, 30, .35), transparent 45%),
-        radial-gradient(ellipse at 80% 25%, rgba(90, 70, 20, .3), transparent 40%),
-        linear-gradient(#2d2f22, #1b1c14);
-    box-shadow: inset 0 1px 4px rgba(0, 0, 0, .85), inset 0 0 0 1px rgba(0, 0, 0, .6);
+        repeating-linear-gradient(115deg, transparent 0 9px, var(--al-scratch) 9px 10px, transparent 10px 23px),
+        radial-gradient(ellipse at 22% 70%, var(--al-grime-1), transparent 45%),
+        radial-gradient(ellipse at 80% 25%, var(--al-grime-2), transparent 40%),
+        linear-gradient(var(--al-glass-off-1), var(--al-glass-off-2));
+    box-shadow: inset 0 1px 4px var(--al-darker), inset 0 0 0 1px var(--al-dark);
     transition: color .3s, background .3s, box-shadow .3s, text-shadow .3s}
-#audioLeveler .al-onair-lit {color: rgba(242, 255, 225, .93);
-    text-shadow: 0 0 4px rgba(210, 255, 190, .9), 0 0 11px rgba(120, 230, 120, .8);
+#audioLeveler .al-onair-lit {color: var(--al-glass-on-text);
+    text-shadow: 0 0 4px var(--al-glass-text-core), 0 0 11px var(--al-glass-text-glow);
     background:
-        repeating-linear-gradient(115deg, transparent 0 9px, rgba(255, 255, 230, .08) 9px 10px, transparent 10px 23px),
-        radial-gradient(ellipse at 22% 70%, rgba(150, 120, 30, .45), transparent 45%),
-        radial-gradient(ellipse at 80% 25%, rgba(120, 100, 25, .35), transparent 40%),
-        radial-gradient(ellipse at 50% 0%, rgba(230, 255, 190, .55), transparent 70%),
-        linear-gradient(#59b862, #2f7d36);
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55), inset 0 0 10px rgba(40, 60, 10, .55), 0 0 12px rgba(110, 220, 110, .55), 0 0 26px rgba(110, 220, 110, .3)}
+        repeating-linear-gradient(115deg, transparent 0 9px, var(--al-scratch-on) 9px 10px, transparent 10px 23px),
+        radial-gradient(ellipse at 22% 70%, var(--al-grime-1), transparent 45%),
+        radial-gradient(ellipse at 80% 25%, var(--al-grime-2), transparent 40%),
+        radial-gradient(ellipse at 50% 0%, var(--al-glass-sun), transparent 70%),
+        linear-gradient(var(--al-glass-on-1), var(--al-glass-on-2));
+    box-shadow: inset 0 1px 3px var(--al-dark), 0 0 12px var(--al-glass-glow), 0 0 26px var(--al-glass-glow-2)}
