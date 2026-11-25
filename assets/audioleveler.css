@@ -112,7 +112,9 @@
 #alEqPanel .al-eq-slider::-moz-range-thumb {width: 30px; height: 14px; border-radius: 3px; border: 0;
     background: linear-gradient(#e1e4e7, #9aa1a8); box-shadow: 0 1px 3px #000}
 #alEqPanel .al-eq-slider:focus-visible::-webkit-slider-thumb {outline: 2px solid var(--bs-primary)}
-#alEqPanel .al-vu {width: 100%; max-width: 360px; height: auto; border: 3px solid #111; border-radius: 10px; display: block}
+#alEqPanel .al-vu {width: 100%; max-width: 360px; height: auto; display: block; border-radius: 6px;
+    border: 10px solid #1b1612; outline: 1px solid #4a3d33;
+    box-shadow: inset 0 0 0 1px #000, 0 0 18px rgba(255, 190, 90, .35), 0 3px 8px rgba(0, 0, 0, .5)}
 #alEqPanel .al-leds {width: 100%; max-width: 360px; height: auto; color: var(--bs-secondary-color)}
 #alEqPanel .al-lamp {display: inline-block; width: .85rem; height: .85rem; border-radius: 50%; border: 1px solid #000}
 #alEqPanel .al-lamp-off {background: #5a1a1a}

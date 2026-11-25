@@ -1983,7 +1983,24 @@
         };
         var pt = function (deg, r) { var t = (deg - 90) * Math.PI / 180; return [cx + r * Math.cos(t), cy + r * Math.sin(t)]; };
         x.clearRect(0, 0, w, h);
-        x.fillStyle = '#f3ead3';
+        // A vintage backlit face: warm parchment lit by a bulb behind the top
+        // edge, the glow falling off toward the bottom and the corners.
+        var face = x.createLinearGradient(0, 0, 0, h);
+        face.addColorStop(0, '#fff1c4');
+        face.addColorStop(0.45, '#f4d993');
+        face.addColorStop(1, '#b98a3e');
+        x.fillStyle = face;
+        x.fillRect(0, 0, w, h);
+        var bulb = x.createRadialGradient(cx, -h * 0.15, h * 0.05, cx, -h * 0.15, h * 1.05);
+        bulb.addColorStop(0, 'rgba(255, 236, 170, 0.95)');
+        bulb.addColorStop(0.35, 'rgba(255, 205, 110, 0.45)');
+        bulb.addColorStop(1, 'rgba(255, 170, 60, 0)');
+        x.fillStyle = bulb;
+        x.fillRect(0, 0, w, h);
+        var vig = x.createRadialGradient(cx, h * 0.35, h * 0.35, cx, h * 0.45, w * 0.62);
+        vig.addColorStop(0, 'rgba(60, 30, 0, 0)');
+        vig.addColorStop(1, 'rgba(60, 30, 0, 0.45)');
+        x.fillStyle = vig;
         x.fillRect(0, 0, w, h);
         var arc = function (a0, a1, r, col, lw) {
             x.beginPath();
@@ -1992,32 +2009,62 @@
             x.arc(cx, cy, r, (a0 - 90) * Math.PI / 180, (a1 - 90) * Math.PI / 180);
             x.stroke();
         };
-        arc(-48, -6, rad - 3, '#2a8f4f', 5);
-        arc(-6, 13, rad - 3, '#d9a520', 5);
-        arc(13, 40, rad, '#d22', 7);
-        x.font = '11px Georgia, serif';
+        // Scale printed in ink: a thin black line, the red zone as a band.
+        arc(-48, 13, rad - 1, '#2b1d10', 1.5);
+        arc(-6, 13, rad - 4, 'rgba(176, 122, 20, 0.85)', 4);
+        arc(-48, -6, rad - 4, 'rgba(38, 110, 60, 0.75)', 4);
+        arc(13, 40, rad - 3, '#b3161b', 8);
+        x.font = '11px Georgia, "Times New Roman", serif';
         x.textAlign = 'center';
         marks.forEach(function (m) {
-            var a = pt(m[1], rad), b = pt(m[1], rad - 11), t = pt(m[1], rad + 12);
+            var a = pt(m[1], rad), b2 = pt(m[1], rad - 10), t = pt(m[1], rad + 12);
+            var ink = m[0] > 0 ? '#a3121a' : '#2b1d10';
             x.beginPath();
-            x.strokeStyle = m[0] > 0 ? '#c11' : '#222';
-            x.lineWidth = 2;
+            x.strokeStyle = ink;
+            x.lineWidth = 1.6;
             x.moveTo(a[0], a[1]);
-            x.lineTo(b[0], b[1]);
+            x.lineTo(b2[0], b2[1]);
             x.stroke();
-            x.fillStyle = m[0] > 0 ? '#c11' : '#222';
+            x.fillStyle = ink;
             x.fillText((m[0] > 0 ? '+' : '') + m[0], t[0], t[1] + 4);
         });
-        x.font = 'bold 15px Georgia, serif';
-        x.fillStyle = '#222';
-        x.fillText('VU', cx, h - 14);
-        var n = pt(ang(vu), rad - 4);
+        x.font = 'italic bold 17px Georgia, "Times New Roman", serif';
+        x.fillStyle = '#2b1d10';
+        x.fillText('VU', cx, h - 30);
+        // Needle, with a soft shadow on the face.
+        var n = pt(ang(vu), rad - 2);
+        x.save();
+        x.shadowColor = 'rgba(40, 20, 0, 0.45)';
+        x.shadowBlur = 4;
+        x.shadowOffsetX = 2;
+        x.shadowOffsetY = 2;
         x.beginPath();
-        x.strokeStyle = '#111';
-        x.lineWidth = 2;
+        x.strokeStyle = '#1a0f05';
+        x.lineWidth = 1.8;
         x.moveTo(cx, cy);
         x.lineTo(n[0], n[1]);
         x.stroke();
+        x.restore();
+        // The pivot cover along the bottom.
+        var cap = x.createLinearGradient(0, h - 22, 0, h);
+        cap.addColorStop(0, '#3a3029');
+        cap.addColorStop(1, '#0d0907');
+        x.fillStyle = cap;
+        x.beginPath();
+        x.ellipse(cx, h + 6, w * 0.22, 26, 0, Math.PI, 2 * Math.PI);
+        x.fill();
+        // Glass: a faint sheen across the top.
+        var glass = x.createLinearGradient(0, 0, 0, h * 0.5);
+        glass.addColorStop(0, 'rgba(255, 255, 255, 0.28)');
+        glass.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        x.fillStyle = glass;
+        x.beginPath();
+        x.moveTo(0, 0);
+        x.lineTo(w, 0);
+        x.lineTo(w, h * 0.18);
+        x.quadraticCurveTo(cx, h * 0.32, 0, h * 0.18);
+        x.closePath();
+        x.fill();
         var lamp = $id('alPeakLamp');
         if (lamp) {
             lamp.classList.toggle('al-lamp-on', !!peakOn);
