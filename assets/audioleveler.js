@@ -1963,6 +1963,90 @@
     /* ---- the meter ---- */
     var meter = { vu: -40, peakUntil: 0, raf: 0, last: 0, l: -60, r: -60 };
 
+    var vuFace = null;
+
+    // Old paper: the same every time (a fixed seed), so the meter looks like
+    // one well-used meter rather than flickering noise.
+    function vuAge(x, w, h, layer) {
+        var seed = layer === 'paper' ? 1979 : 1957;
+        var rnd = function () {
+            seed = (seed + 0x6D2B79F5) | 0;
+            var t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        var i;
+        if (layer === 'paper') {
+            // Yellowed, uneven tone: big soft stains.
+            for (i = 0; i < 9; i++) {
+                var sx = rnd() * w, sy = rnd() * h, sr = 25 + rnd() * 70;
+                var st = x.createRadialGradient(sx, sy, 0, sx, sy, sr);
+                st.addColorStop(0, 'rgba(150, 95, 25, ' + (0.06 + rnd() * 0.08).toFixed(3) + ')');
+                st.addColorStop(1, 'rgba(150, 95, 25, 0)');
+                x.fillStyle = st;
+                x.fillRect(sx - sr, sy - sr, sr * 2, sr * 2);
+            }
+            // Foxing: small brown age spots, a few with a darker heart.
+            for (i = 0; i < 26; i++) {
+                var fx = rnd() * w, fy = rnd() * h, fr = 1 + rnd() * 4.5;
+                var fg = x.createRadialGradient(fx, fy, 0, fx, fy, fr * 2.2);
+                fg.addColorStop(0, 'rgba(120, 62, 18, ' + (0.18 + rnd() * 0.3).toFixed(3) + ')');
+                fg.addColorStop(1, 'rgba(120, 62, 18, 0)');
+                x.fillStyle = fg;
+                x.fillRect(fx - fr * 2.2, fy - fr * 2.2, fr * 4.4, fr * 4.4);
+            }
+            // A tea-coloured water ring, faint.
+            x.beginPath();
+            x.strokeStyle = 'rgba(130, 80, 20, 0.16)';
+            x.lineWidth = 2.2;
+            x.arc(w * 0.82, h * 0.7, 22, 0.3, 5.4);
+            x.stroke();
+            // Edges browned where the light never reached.
+            var ed = x.createLinearGradient(0, 0, w, 0);
+            ed.addColorStop(0, 'rgba(110, 60, 10, 0.28)');
+            ed.addColorStop(0.08, 'rgba(110, 60, 10, 0)');
+            ed.addColorStop(0.92, 'rgba(110, 60, 10, 0)');
+            ed.addColorStop(1, 'rgba(110, 60, 10, 0.28)');
+            x.fillStyle = ed;
+            x.fillRect(0, 0, w, h);
+            // Paper grain.
+            for (i = 0; i < 900; i++) {
+                x.fillStyle = rnd() < 0.5 ? 'rgba(90, 50, 10, 0.07)' : 'rgba(255, 245, 220, 0.08)';
+                x.fillRect(rnd() * w, rnd() * h, 1, 1);
+            }
+            return;
+        }
+        // Crazing: fine hairline cracks wandering across the face, each with a
+        // pale edge where the paper lifts.
+        for (i = 0; i < 7; i++) {
+            var px = rnd() * w, py = rnd() * h, dir = rnd() * Math.PI * 2;
+            var pts = [[px, py]];
+            for (var k = 0; k < 6 + Math.floor(rnd() * 6); k++) {
+                dir += (rnd() - 0.5) * 1.1;
+                px += Math.cos(dir) * (6 + rnd() * 12);
+                py += Math.sin(dir) * (6 + rnd() * 12);
+                pts.push([px, py]);
+                if (rnd() < 0.18) {   // a small branch
+                    var bd = dir + (rnd() < 0.5 ? 1 : -1) * (0.6 + rnd() * 0.6);
+                    x.beginPath();
+                    x.moveTo(px, py);
+                    x.lineTo(px + Math.cos(bd) * (5 + rnd() * 9), py + Math.sin(bd) * (5 + rnd() * 9));
+                    x.strokeStyle = 'rgba(70, 40, 10, 0.32)';
+                    x.lineWidth = 0.6;
+                    x.stroke();
+                }
+            }
+            [['rgba(255, 248, 225, 0.35)', 1.6, 0.8], ['rgba(70, 40, 10, 0.45)', 0.7, 0]].forEach(function (pass) {
+                x.beginPath();
+                x.moveTo(pts[0][0] + pass[2], pts[0][1] + pass[2]);
+                for (var q = 1; q < pts.length; q++) { x.lineTo(pts[q][0] + pass[2], pts[q][1] + pass[2]); }
+                x.strokeStyle = pass[0];
+                x.lineWidth = pass[1];
+                x.stroke();
+            });
+        }
+    }
+
     function drawVu(vu, peakOn) {
         var c = $id('alVu');
         if (!c) { return; }
@@ -1982,55 +2066,68 @@
             return 40;
         };
         var pt = function (deg, r) { var t = (deg - 90) * Math.PI / 180; return [cx + r * Math.cos(t), cy + r * Math.sin(t)]; };
+        // The face (paper, ageing, glow, printed scale) is drawn once and
+        // reused; each frame only adds the needle and the glass.
+        if (!vuFace || vuFace.width !== w || vuFace.height !== h) {
+            vuFace = document.createElement('canvas');
+            vuFace.width = w;
+            vuFace.height = h;
+            var screen = x;
+            x = vuFace.getContext('2d');
+            // A vintage backlit face: warm parchment lit by a bulb behind the top
+            // edge, the glow falling off toward the bottom and the corners.
+            var face = x.createLinearGradient(0, 0, 0, h);
+            face.addColorStop(0, '#fff1c4');
+            face.addColorStop(0.45, '#f4d993');
+            face.addColorStop(1, '#b98a3e');
+            x.fillStyle = face;
+            x.fillRect(0, 0, w, h);
+            vuAge(x, w, h, 'paper');
+            var bulb = x.createRadialGradient(cx, -h * 0.15, h * 0.05, cx, -h * 0.15, h * 1.05);
+            bulb.addColorStop(0, 'rgba(255, 236, 170, 0.95)');
+            bulb.addColorStop(0.35, 'rgba(255, 205, 110, 0.45)');
+            bulb.addColorStop(1, 'rgba(255, 170, 60, 0)');
+            x.fillStyle = bulb;
+            x.fillRect(0, 0, w, h);
+            var vig = x.createRadialGradient(cx, h * 0.35, h * 0.35, cx, h * 0.45, w * 0.62);
+            vig.addColorStop(0, 'rgba(60, 30, 0, 0)');
+            vig.addColorStop(1, 'rgba(60, 30, 0, 0.45)');
+            x.fillStyle = vig;
+            x.fillRect(0, 0, w, h);
+            var arc = function (a0, a1, r, col, lw) {
+                x.beginPath();
+                x.strokeStyle = col;
+                x.lineWidth = lw;
+                x.arc(cx, cy, r, (a0 - 90) * Math.PI / 180, (a1 - 90) * Math.PI / 180);
+                x.stroke();
+            };
+            // Scale printed in ink: a thin black line, the red zone as a band.
+            arc(-48, 13, rad - 1, '#2b1d10', 1.5);
+            arc(-6, 13, rad - 4, 'rgba(176, 122, 20, 0.85)', 4);
+            arc(-48, -6, rad - 4, 'rgba(38, 110, 60, 0.75)', 4);
+            arc(13, 40, rad - 3, '#b3161b', 8);
+            x.font = '11px Georgia, "Times New Roman", serif';
+            x.textAlign = 'center';
+            marks.forEach(function (m) {
+                var a = pt(m[1], rad), b2 = pt(m[1], rad - 10), t = pt(m[1], rad + 12);
+                var ink = m[0] > 0 ? '#a3121a' : '#2b1d10';
+                x.beginPath();
+                x.strokeStyle = ink;
+                x.lineWidth = 1.6;
+                x.moveTo(a[0], a[1]);
+                x.lineTo(b2[0], b2[1]);
+                x.stroke();
+                x.fillStyle = ink;
+                x.fillText((m[0] > 0 ? '+' : '') + m[0], t[0], t[1] + 4);
+            });
+            vuAge(x, w, h, 'cracks');
+            x.font = 'italic bold 17px Georgia, "Times New Roman", serif';
+            x.fillStyle = '#2b1d10';
+            x.fillText('VU', cx, h - 30);
+            x = screen;
+        }
         x.clearRect(0, 0, w, h);
-        // A vintage backlit face: warm parchment lit by a bulb behind the top
-        // edge, the glow falling off toward the bottom and the corners.
-        var face = x.createLinearGradient(0, 0, 0, h);
-        face.addColorStop(0, '#fff1c4');
-        face.addColorStop(0.45, '#f4d993');
-        face.addColorStop(1, '#b98a3e');
-        x.fillStyle = face;
-        x.fillRect(0, 0, w, h);
-        var bulb = x.createRadialGradient(cx, -h * 0.15, h * 0.05, cx, -h * 0.15, h * 1.05);
-        bulb.addColorStop(0, 'rgba(255, 236, 170, 0.95)');
-        bulb.addColorStop(0.35, 'rgba(255, 205, 110, 0.45)');
-        bulb.addColorStop(1, 'rgba(255, 170, 60, 0)');
-        x.fillStyle = bulb;
-        x.fillRect(0, 0, w, h);
-        var vig = x.createRadialGradient(cx, h * 0.35, h * 0.35, cx, h * 0.45, w * 0.62);
-        vig.addColorStop(0, 'rgba(60, 30, 0, 0)');
-        vig.addColorStop(1, 'rgba(60, 30, 0, 0.45)');
-        x.fillStyle = vig;
-        x.fillRect(0, 0, w, h);
-        var arc = function (a0, a1, r, col, lw) {
-            x.beginPath();
-            x.strokeStyle = col;
-            x.lineWidth = lw;
-            x.arc(cx, cy, r, (a0 - 90) * Math.PI / 180, (a1 - 90) * Math.PI / 180);
-            x.stroke();
-        };
-        // Scale printed in ink: a thin black line, the red zone as a band.
-        arc(-48, 13, rad - 1, '#2b1d10', 1.5);
-        arc(-6, 13, rad - 4, 'rgba(176, 122, 20, 0.85)', 4);
-        arc(-48, -6, rad - 4, 'rgba(38, 110, 60, 0.75)', 4);
-        arc(13, 40, rad - 3, '#b3161b', 8);
-        x.font = '11px Georgia, "Times New Roman", serif';
-        x.textAlign = 'center';
-        marks.forEach(function (m) {
-            var a = pt(m[1], rad), b2 = pt(m[1], rad - 10), t = pt(m[1], rad + 12);
-            var ink = m[0] > 0 ? '#a3121a' : '#2b1d10';
-            x.beginPath();
-            x.strokeStyle = ink;
-            x.lineWidth = 1.6;
-            x.moveTo(a[0], a[1]);
-            x.lineTo(b2[0], b2[1]);
-            x.stroke();
-            x.fillStyle = ink;
-            x.fillText((m[0] > 0 ? '+' : '') + m[0], t[0], t[1] + 4);
-        });
-        x.font = 'italic bold 17px Georgia, "Times New Roman", serif';
-        x.fillStyle = '#2b1d10';
-        x.fillText('VU', cx, h - 30);
+        x.drawImage(vuFace, 0, 0);
         // Needle, with a soft shadow on the face.
         var n = pt(ang(vu), rad - 2);
         x.save();
