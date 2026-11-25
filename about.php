@@ -137,8 +137,10 @@
             <h6 class="fw-semibold">Audio EQ</h6>
             <p>The <b>Audio EQ</b> tab drives FPP's own 5-band Parametric EQ with a three-way switch. <b>Off</b> leaves FPP untouched.
                <b>Preview</b> lets you pick a preset (FM Clear, Bass Boost, Loudness, Vocal, Rock, Pop, Old Radio, Flat) or move the sliders and hear a test
-               song through it in your browser only, with a VU meter; <b>Remember settings</b> keeps them. <b>Live</b> switches FPP's audio to
-               Advanced with the EQ on your sound card (reboot); slider moves go out live and <b>Save to FPP</b> keeps them. Going back to Preview or
+               song through it in your browser only, with a VU meter. <b>Live</b> switches FPP's audio to
+               Advanced with the EQ on your sound card (reboot). Like a radio, there's no Save button: a pick goes out live and is saved by itself
+               (into FPP's settings once nothing is playing, since that restarts FPP's audio for a few seconds). Moving a slider makes your own
+               <b>Custom</b> setting; the presets never change. Going back to Preview or
                Off puts FPP's audio settings back exactly as they were (reboot). <b>+ Save as preset</b> keeps up to 8 of your own. Leaving the tab stops
                the test song and turns Preview off. With K-FMT a TX lamp shows the transmitter's peak. Nothing switches while a show is playing; turning
                sliders up can overdrive a transmitter.</p>

@@ -1403,7 +1403,7 @@
         });
         // Leaving the page doesn't leave a song playing through the show.
         window.addEventListener('pagehide', function () {
-            if (tab === 'eq') { eqRevertIfDirty(true); }
+            if (tab === 'eq') { eqFlush(true); }
             if (player.mode === 'show' && player.name && navigator.sendBeacon) {
                 navigator.sendBeacon(API + 'preview', JSON.stringify({ file: player.name, action: 'stop' }));
             }
@@ -1439,12 +1439,14 @@
         '<li><b>Preview</b> is in your browser only: nothing on FPP or the transmitter changes. Leaving this tab turns it off.</li>' +
         '<li><b>Live switches FPP\'s audio to Advanced (Full PipeWire)</b> with your show\'s sound card, and needs a reboot. ' +
         '<b>Going back to Preview or Off puts FPP\'s audio settings back exactly as they were</b> (another reboot); your EQ is remembered for next time.</li>' +
-        '<li><b>Switching Live on or off, and Save to FPP, restart FPP\'s audio</b>, which stops anything playing. It won\'t while a show is running.</li>' +
+        '<li><b>Switching Live on or off restarts FPP\'s audio</b>, which stops anything playing. It won\'t while a show is running.</li>' +
+        '<li><b>In Live, a change is saved into FPP by itself</b>, the same as FPP\'s own Save &amp; Apply, which restarts FPP\'s audio for a few seconds. ' +
+        'So while anything plays you hear the change straight away, and it goes into FPP\'s settings when the playing stops.</li>' +
         '<li><b>Raising a slider makes the signal hotter.</b> Too hot overdrives an FM transmitter: distortion, and RDS can drop out. ' +
         'The presets only cut; if you push sliders up, watch the meter.</li>' +
         '<li>Some presets make the show a little quieter overall: turn FPP\'s volume up a touch if needed.</li>' +
         '<li><b>It changes everything FPP plays through this sound card</b>, every song and video, not one song.</li>' +
-        '<li><b>Slider changes play live but aren\'t kept until you save.</b> Leave without saving and the saved EQ comes back.</li>' +
+        '<li><b>Presets never change.</b> Moving a slider makes your own <b>Custom</b> setting; <b>+ Save as preset</b> keeps it under a name.</li>' +
         '<li>These are FPP\'s own EQ settings (Audio Output Groups), so changes show there too.</li></ul>';
 
     var eq = {
@@ -1472,6 +1474,9 @@
             eq.saved = (j.gains || [0, 0, 0, 0, 0]).slice();
             eq.preset = j.preset || 'flat';
             eq.presets = j.presets || [];
+            eq.custom = j.custom || null;
+            // What FPP itself has saved (none: from before the plugin kept track; taken as in step).
+            eq.fppGains = j.fppGains || (eq.on ? (j.gains || [0, 0, 0, 0, 0]).slice() : null);
             // Live is FPP's own setting; Preview lives only on this page.
             if (eq.on) { eq.mode = 'show'; } else if (eq.mode === 'show') { eq.mode = 'off'; }
             applyEqToPlayer();
@@ -1492,7 +1497,8 @@
                 '<div class="small fw-semibold text-body-secondary text-uppercase mb-1">Presets</div>' +
                 '<div id="alEqPresets" class="d-flex flex-wrap gap-2 mb-3">' + EQ_PRESETS.map(function (p) {
                     return '<button type="button" class="buttons btn btn-sm btn-outline-secondary" data-preset="' + p[0] + '">' + p[1] + '</button>';
-                }).join('') + '</div>' +
+                }).join('') + '<button type="button" class="buttons btn btn-sm btn-outline-secondary" data-preset="custom" ' +
+                'title="Your own slider settings. Move any slider to change it; the presets stay as they are.">Custom</button></div>' +
                 '<div class="small fw-semibold text-body-secondary text-uppercase mb-1">My presets</div>' +
                 '<div class="d-flex flex-wrap align-items-center gap-2 mb-3">' +
                 '<span id="alEqMine" class="d-flex flex-wrap gap-2"></span>' +
@@ -1507,7 +1513,6 @@
                 '<div class="row g-3">' +
                 '<div class="col-12 col-lg-7"><div class="rounded border p-3 h-100">' +
                 '<div class="d-flex flex-wrap align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase me-auto">Equalizer (dB)</span>' +
-                '<span id="alEqDirty" class="badge text-bg-warning d-none">Unsaved changes</span>' +
                 '<span id="alEqAB" class="btn-group btn-group-sm" role="group" aria-label="Hear the EQ">' +
                 '<button type="button" class="btn btn-outline-secondary" data-ab="before" title="Hear it with the EQ flat">Before</button>' +
                 '<button type="button" class="btn btn-outline-secondary" data-ab="after" title="Hear it with this EQ">After</button></span></div>' +
@@ -1517,9 +1522,7 @@
                         '<span class="small text-body-secondary">' + f + '</span></div>';
                 }).join('') + '</div>' +
                 '<div id="alEqHint" class="form-text"></div>' +
-                '<div class="d-flex gap-2 justify-content-end mt-2">' +
-                '<button id="alEqUndo" type="button" class="btn btn-sm btn-outline-secondary">Undo</button>' +
-                '<button id="alEqSave" type="button" class="buttons btn btn-sm btn-success">Save</button></div>' +
+                '<div id="alEqSaveState" class="small text-body-secondary text-end mt-2" aria-live="polite"></div>' +
                 '</div></div>' +
                 '<div class="col-12 col-lg-5"><div class="rounded border p-3 h-100">' +
                 '<div class="d-flex align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase">Level</span>' +
@@ -1581,9 +1584,9 @@
         body.classList.toggle('al-eq-disabled', eq.mode === 'off');
         $id('alEqOffNote').classList.toggle('d-none', eq.mode !== 'off');
         $id('alEqHint').innerHTML = eq.mode === 'show'
-            ? 'Changes go out live; <b>Save to FPP</b> keeps them. The presets only cut, so the transmitter never gets a hotter signal.'
-            : 'Here in your browser only. <b>Remember settings</b> keeps them for when you pick Live. The presets only cut.';
-        $id('alEqSave').textContent = eq.mode === 'show' ? 'Save to FPP' : 'Remember settings';
+            ? 'Like a radio: pick a preset and it\'s on, and kept. Moving a slider makes your own Custom setting. The presets only cut, so the transmitter never gets a hotter signal.'
+            : 'Here in your browser only, and kept for when you pick Live. Moving a slider makes your own Custom setting. The presets only cut.';
+        $id('alEqSaveState').innerHTML = eqSaveStateHtml();
         // My presets
         $id('alEqMine').innerHTML = eq.presets.map(function (p, i) {
             var on = p.gains.join() === eq.gains.join();
@@ -1598,6 +1601,9 @@
         $id('alEqMineFull').classList.toggle('d-none', naming || eq.presets.length < 8);
         // Presets, sliders, buttons
         var matching = EQ_PRESETS.filter(function (p) { return p[2].join() === eq.gains.join(); })[0];
+        var mineOn = eq.presets.some(function (p) { return p.gains.join() === eq.gains.join(); });
+        if (!matching && !mineOn) { matching = ['custom']; }
+        el.querySelector('[data-preset="custom"]').disabled = !eq.custom && matching[0] !== 'custom';
         Array.prototype.forEach.call(el.querySelectorAll('[data-preset]'), function (b) {
             var on = matching && matching[0] === b.getAttribute('data-preset');
             b.classList.toggle('btn-success', !!on);
@@ -1614,9 +1620,6 @@
             b.classList.toggle('active', on);
             b.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
-        $id('alEqDirty').classList.toggle('d-none', !eqDirty());
-        $id('alEqUndo').disabled = !eqDirty();
-        $id('alEqSave').disabled = !eqDirty() || eq.busy;
         $id('alTxWrap').classList.toggle('d-none', !eq.kfmt);
         $id('alTxClear').classList.toggle('d-none', !eq.kfmt);
         // Test songs: the Songs list as it stands
@@ -1684,7 +1687,8 @@
     }
 
     function eqSendLive(force) {
-        if (!eq.on || eq.rebootPending || eq.showRunning) { return; }
+        // FPP's own live update (as its EQ sliders do): no restart, so fine mid-show.
+        if (!eq.on || eq.rebootPending) { return; }
         var gains = player.mode === 'show' ? eqPlaybackGains() : eq.gains;
         var key = gains.join();
         if (!force && key === eq.liveSent) { return; }
@@ -1702,7 +1706,70 @@
         eq.gains = g.map(function (x) { return Math.max(-12, Math.min(12, Math.round(x * 2) / 2)); });
         applyEqToPlayer();
         eqSendLive();
+        eqQueueSave();
         renderEq();
+    }
+
+    /* Saving happens by itself, like the buttons on an old radio. Every pick
+       or slider move is remembered by the plugin straight away (once the
+       slider stops). In Live it also goes into FPP's own settings, which is
+       FPP's Save & Apply and restarts FPP's audio for a few seconds: so only
+       while nothing is playing. Until then you hear it live and the plugin
+       has it; the page saves it into FPP when the playing stops. */
+    // Nothing at all playing through FPP, our own previews included (saving
+    // into FPP restarts its audio, which would cut them off).
+    function eqFppQuiet(st) {
+        return !!st && st.status_name === 'idle' && !(player.mode === 'show' && player.name);
+    }
+
+    function eqNeedsFpp() {
+        return eq.on && !eq.rebootPending && !!eq.fppGains && eq.fppGains.join() !== eq.saved.join();
+    }
+
+    function eqQueueSave() {
+        clearTimeout(eq.saveTimer);
+        eq.saveTimer = null;
+        if (eq.mode === 'off' || !eqDirty()) { return; }
+        eq.saveTimer = setTimeout(function () { eq.saveTimer = null; eqAutoSave(); }, 900);
+    }
+
+    function eqSaveBody() {
+        return { gains: eq.gains.slice(), preset: eq.preset, custom: eq.custom || undefined };
+    }
+
+    function eqAutoSave() {
+        if (eq.saving || (!eqDirty() && !eqNeedsFpp())) { return; }
+        var body = eqSaveBody();
+        // Our own preview plays as FPP's "idle" for a video: the server can't
+        // see it, so say so and it only remembers.
+        if (player.mode === 'show' && player.name) { body.hold = true; }
+        eq.saving = true;
+        renderEq();
+        api('POST', 'eq/save', body).then(function (j) {
+            eq.saved = body.gains;
+            if (j.fppGains) { eq.fppGains = j.fppGains.slice(); }
+        }).catch(function (ex) { toast(ex.message, false); }).then(function () {
+            eq.saving = false;
+            renderEq();
+            if (eqDirty() && !eq.saveTimer) { eqQueueSave(); }
+        });
+    }
+
+    function eqSaveStateHtml() {
+        if (eq.mode === 'off') { return ''; }
+        if (eq.saving) {
+            return eq.on && eq.fppQuiet && !eq.rebootPending
+                ? '<i class="fas fa-spinner fa-spin"></i> Saving into FPP: its audio restarts for a few seconds&hellip;'
+                : '<i class="fas fa-spinner fa-spin"></i> Saving&hellip;';
+        }
+        if (eqDirty() || eq.saveTimer) { return 'Saving&hellip;'; }
+        if (eq.mode !== 'show') { return '<i class="fas fa-check text-success"></i> Kept for when you go Live'; }
+        if (eq.rebootPending) { return '<i class="fas fa-check text-success"></i> Kept: in the show after the reboot'; }
+        if (eqNeedsFpp()) {
+            return '<i class="fas fa-circle text-warning"></i> <b>On now and kept.</b> Goes into FPP\'s own settings by itself when the playing stops ' +
+                '(saving restarts FPP\'s audio for a few seconds).';
+        }
+        return '<i class="fas fa-check text-success"></i> Saved in FPP';
     }
 
     function wireEq() {
@@ -1718,7 +1785,7 @@
                 eq.mode = to;
                 if (to === 'off') {
                     if (player.name) { stopPlayer(); }
-                    eq.gains = eq.saved.slice();
+                    eqFlush(false);   // a pick still waiting is kept
                 }
                 applyEqToPlayer();
                 renderEq();
@@ -1745,6 +1812,10 @@
                 return;
             }
             var p = e.target.closest('[data-preset]');
+            if (p && p.getAttribute('data-preset') === 'custom') {
+                if (eq.custom) { eq.preset = 'custom'; eqSetGains(eq.custom.slice()); }
+                return;
+            }
             if (p) {
                 var pr = EQ_PRESETS.filter(function (x) { return x[0] === p.getAttribute('data-preset'); })[0];
                 eq.preset = pr[0];
@@ -1783,26 +1854,8 @@
             var g = eq.gains.slice();
             g[+e.target.getAttribute('data-band')] = parseFloat(e.target.value);
             eq.preset = 'custom';
+            eq.custom = g.map(function (x) { return Math.max(-12, Math.min(12, Math.round(x * 2) / 2)); });
             eqSetGains(g);
-        });
-        $id('alEqUndo').addEventListener('click', function () { eqSetGains(eq.saved.slice()); });
-        $id('alEqSave').addEventListener('click', function () {
-            if (eq.mode === 'show' && eq.showRunning) {
-                // Saving to FPP restarts its audio (as FPP's own Save does): never mid-song.
-                var c = $id('alEqConfirm');
-                c.innerHTML = '<b>Stop the song first, then Save to FPP.</b> Saving restarts FPP\'s audio for a few seconds, the same as FPP\'s own Save, ' +
-                    'so it won\'t while something is playing. What you\'re hearing now stays until you leave this page.' +
-                    ' <div class="mt-2"><button type="button" class="btn btn-sm btn-outline-secondary" data-eq-confirm="cancel">OK</button></div>';
-                c.classList.remove('d-none');
-                return;
-            }
-            $id('alEqConfirm').classList.add('d-none');
-            eq.busy = true;
-            renderEq();
-            api('POST', 'eq/save', { gains: eq.gains, preset: eq.preset }).then(function (j) {
-                eq.saved = eq.gains.slice();
-                toast(j.applied ? 'EQ saved to FPP.' : 'Settings remembered. They go to FPP when you pick Live.');
-            }).catch(function (ex) { toast(ex.message, false); }).then(function () { eq.busy = false; renderEq(); });
         });
         $id('alEqPlay').addEventListener('click', function () {
             var n = $id('alEqSong').value;
@@ -1869,7 +1922,10 @@
                 var was = eq.showRunning;
                 eq.showRunning = !!st && st.status_name !== 'idle' && cur !== PREVIEW_PLAYLIST;
                 eq.playingName = eq.showRunning ? (cur || '') : '';
-                if (was !== eq.showRunning) { renderEq(); }
+                var wasQuiet = eq.fppQuiet;
+                eq.fppQuiet = eqFppQuiet(st);
+                if (was !== eq.showRunning || wasQuiet !== eq.fppQuiet) { renderEq(); }
+                if (eq.fppQuiet && !eq.saving && !eq.saveTimer && eqNeedsFpp()) { eqAutoSave(); }
             }).catch(function () { /* fppd down */ });
             pollTx();
         }, 2000);
@@ -1878,9 +1934,7 @@
     // Leaving the tab: the test song stops, Preview turns off and unsaved
     // slider moves go back to what was saved. Live stays as it is.
     function eqLeave() {
-        eqRevertIfDirty(false);
-        eq.gains = eq.saved.slice();
-        eq.after = true;   // other tabs hear what FPP plays
+        eqFlush(false);
         setTimeout(fppMeterSync, 0);   // after the tab has changed: FPP stops metering
         if (eq.mode === 'try') { eq.mode = 'off'; }
         eq.delAsk = -1;
@@ -1888,16 +1942,21 @@
         if (player.name) { stopPlayer(); }
     }
 
-    // Leaving with unsaved changes puts the saved EQ back on FPP.
-    function eqRevertIfDirty(beacon) {
-        if (!eq.on || !eqDirty()) { return; }
-        var body = JSON.stringify({ gains: eq.saved });
-        if (beacon && navigator.sendBeacon) {
-            navigator.sendBeacon(API + 'eq/live', body);
-        } else {
-            api('POST', 'eq/live', { gains: eq.saved }).catch(function () { /* best effort */ });
+    // Leaving: a change still waiting to be remembered is saved now, and
+    // FPP plays what you picked (not "Before", if that was on).
+    function eqFlush(beacon) {
+        clearTimeout(eq.saveTimer);
+        eq.saveTimer = null;
+        var body = eqSaveBody();
+        if (eq.mode !== 'off' && eqDirty()) {
+            if (beacon && navigator.sendBeacon) { navigator.sendBeacon(API + 'eq/save', JSON.stringify(body)); }
+            else { eqAutoSave(); }
         }
-        eq.gains = eq.saved.slice();
+        if (eq.on && !eq.after) {
+            if (beacon && navigator.sendBeacon) { navigator.sendBeacon(API + 'eq/live', JSON.stringify({ gains: body.gains })); }
+            else { api('POST', 'eq/live', { gains: body.gains }).catch(function () { /* best effort */ }); }
+        }
+        eq.after = true;   // other tabs hear what FPP plays
         applyEqToPlayer();
     }
 
@@ -2023,7 +2082,7 @@
        FPP's status WebSocket, which FPP's own page script hands to
        window.PWMixerOnLevels. Nothing meters while the tab is hidden or
        you're on another tab. Levels are RMS on FPP's -60..0 dBFS scale. */
-    var fppMeter = { on: false, timer: null, node: '', level: null, at: 0, since: 0, hooked: false };
+    var fppMeter = { on: false, timer: null, node: '', level: null, at: 0, good: 0, since: 0, hooked: false };
     document.addEventListener('visibilitychange', function () { fppMeterSync(); });
 
     function fppMeterWanted() {
@@ -2045,10 +2104,19 @@
                 var prev = window.PWMixerOnLevels;
                 window.PWMixerOnLevels = function (levels) {
                     if (fppMeter.on && levels && typeof levels[fppMeter.node] === 'number') {
-                        fppMeter.level = levels[fppMeter.node];
-                        fppMeter.at = Date.now();
+                        var v = levels[fppMeter.node], now = Date.now();
+                        // fppd reports a meter that fell behind (a busy Pi) as
+                        // silence, then catches up. A sudden drop to the floor
+                        // right after real sound is that, not a quiet song: ride
+                        // over it. Real silence still shows once it lasts.
+                        if (v <= 0 && fppMeter.level > 0 && now - fppMeter.good < 1500) { return pass(); }
+                        fppMeter.level = v;
+                        fppMeter.at = now;
+                        if (v > 0) { fppMeter.good = now; }
                     }
-                    if (typeof prev === 'function') { prev(levels); }
+                    pass();
+                    function pass() { if (typeof prev === 'function') { prev(levels); } }
+                    return;
                 };
                 fppMeter.hooked = true;
             }
@@ -2074,7 +2142,9 @@
 
     // FPP's level as the meter's L and R (FPP reports one level per node).
     function fppLevels() {
-        var fresh = typeof fppMeter.level === 'number' && Date.now() - fppMeter.at < 1000;
+        // Frames can arrive in bursts over the WebSocket: hold the last level
+        // through a short gap instead of dropping the needle.
+        var fresh = typeof fppMeter.level === 'number' && Date.now() - fppMeter.at < 2000;
         var pct = fresh ? fppMeter.level : 0;
         if (pct >= 90) { meter.peakUntil = Date.now() + 1000; }   // FPP's own "hot" mark, -6 dBFS RMS
         var vu = pct * 0.6 - 60 + 18;

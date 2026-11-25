@@ -1316,6 +1316,9 @@ function AudioLevelerEqData()
     $d['preset'] = isset($d['preset']) && is_string($d['preset']) ? $d['preset'] : 'flat';
     $d['on'] = !empty($d['on']);
     $d['presets'] = AudioLevelerEqCleanPresets(isset($d['presets']) ? $d['presets'] : array());
+    // Your last slider settings (Custom), kept apart from every preset.
+    $c = AudioLevelerEqCleanPresets(array(array('name' => 'Custom', 'gains' => isset($d['custom']) && is_array($d['custom']) ? $d['custom'] : array())));
+    $d['custom'] = isset($d['custom']) && is_array($d['custom']) && $c ? $c[0]['gains'] : null;
     return $d;
 }
 
@@ -1508,7 +1511,7 @@ function AudioLevelerEqState()
     AudioLevelerNoCache();
     $d = AudioLevelerEqData();
     $out = array('status' => 'OK', 'supported' => AudioLevelerEqSupported(), 'on' => $d['on'], 'gains' => $d['gains'],
-        'preset' => $d['preset'], 'presets' => $d['presets'], 'backend' => AudioLevelerMediaBackend(), 'kfmt' => is_dir(AudioLevelerPluginsDir() . '/fpp-kfmt'));
+        'preset' => $d['preset'], 'presets' => $d['presets'], 'custom' => $d['custom'], 'fppGains' => isset($d['fppGains']) ? $d['fppGains'] : null, 'backend' => AudioLevelerMediaBackend(), 'kfmt' => is_dir(AudioLevelerPluginsDir() . '/fpp-kfmt'));
     if (!$out['supported']) {
         return json($out);
     }
@@ -1622,6 +1625,7 @@ function AudioLevelerEqOnLocked()
     $d['prevBackend'] = $backend;
     $d['prevGroups'] = $prev;
     unset($d['hadGroupsFile']);
+    $d['fppGains'] = $d['gains'];   // what goes into FPP's group now
     if (!AudioLevelerSaveEqData($d)) {
         return AudioLevelerError(500, 'Couldn\'t save the EQ in the plugin\'s data folder. Nothing was changed.');
     }
@@ -1656,7 +1660,7 @@ function AudioLevelerEqOnLocked()
 function AudioLevelerEqForget($d)
 {
     $d['on'] = false;
-    unset($d['prevGroups'], $d['hadGroupsFile'], $d['switchedBackend'], $d['prevBackend']);
+    unset($d['prevGroups'], $d['hadGroupsFile'], $d['switchedBackend'], $d['prevBackend'], $d['fppGains']);
     return $d;
 }
 
@@ -1736,9 +1740,11 @@ function AudioLevelerEqLive()
     return json(array('status' => $code === 200 ? 'OK' : 'ERROR'));
 }
 
-// POST /api/plugin/AudioLeveler/eq/save   body: {"gains": [5], "preset"}
-// Remembered here always; when the EQ is live, written into FPP's group and
-// applied, so it survives a reboot.
+// POST /api/plugin/AudioLeveler/eq/save   body: {"gains": [5], "preset", "custom": [5]}
+// The page calls this by itself whenever you pick a preset or move a slider.
+// Remembered here always; when the EQ is live and nothing is playing, also
+// written into FPP's group and applied (FPP's Save & Apply, a few seconds'
+// audio restart), so it survives a reboot.
 function AudioLevelerEqSave()
 {
     $body = AudioLevelerBody();
@@ -1752,15 +1758,26 @@ function AudioLevelerEqSave()
         if (isset($body['preset']) && is_string($body['preset'])) {
             $d['preset'] = substr(preg_replace('/[^a-z]/', '', $body['preset']), 0, 20);
         }
-        if (!$d['on']) {
+        if (isset($body['custom']) && is_array($body['custom'])) {
+            $c = AudioLevelerEqCleanPresets(array(array('name' => 'Custom', 'gains' => $body['custom'])));
+            $d['custom'] = $c ? $c[0]['gains'] : $d['custom'];
+        }
+        global $settings;
+        $waiting = isset($settings['rebootFlag']) && intval($settings['rebootFlag']) === 1;
+        $st = $d['on'] && !$waiting ? AudioLevelerFppStatus() : null;
+        $busy = $st === null || $st['status_name'] !== 'idle' || !empty($body['hold']);
+        if (!$d['on'] || $waiting || $busy) {
+            // Remembered here only: when the EQ is off; when it's live but
+            // waiting for its reboot (FPP builds the EQ from the group as it
+            // was at the switch); or while something plays, since saving into
+            // FPP restarts its audio. The page saves it into FPP once FPP is
+            // running it and nothing is playing (fppGains says what FPP has).
             if (!AudioLevelerSaveEqData($d)) {
                 return AudioLevelerError(500, 'Couldn\'t save the EQ in the plugin\'s data folder.');
             }
-            return json(array('status' => 'OK', 'applied' => false));
+            return json(array('status' => 'OK', 'applied' => false, 'fppGains' => isset($d['fppGains']) ? $d['fppGains'] : null));
         }
-        if ($e = AudioLevelerEqNeedsIdle()) {
-            return $e;
-        }
+        AudioLevelerSaveEqData($d);   // remembered even if FPP says no below
         list($code, $data) = AudioLevelerFppApi('GET', 'pipewire/audio/groups');
         if ($code !== 200 || !is_array($data) || !isset($data['groups']) || !is_array($data['groups'])) {
             return AudioLevelerError(502, 'Couldn\'t read FPP\'s audio groups.');
@@ -1786,10 +1803,11 @@ function AudioLevelerEqSave()
         if ($code !== 200) {
             return AudioLevelerError(502, 'FPP didn\'t save the EQ.');
         }
+        $d['fppGains'] = $d['gains'];   // what FPP has saved
         AudioLevelerSaveEqData($d);
         list($code) = AudioLevelerFppApi('POST', 'pipewire/audio/groups/apply', array());
         AudioLevelerLog('Audio EQ saved to FPP: ' . implode(' / ', $d['gains']) . ' dB' . ($code === 200 ? '' : ' (FPP\'s apply answered ' . $code . ')'));
-        return json(array('status' => 'OK', 'applied' => true));
+        return json(array('status' => 'OK', 'applied' => true, 'fppGains' => $d['fppGains']));
     } finally {
         AudioLevelerEqUnlock($lock);
     }
