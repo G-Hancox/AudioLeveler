@@ -138,3 +138,33 @@
 #audioLeveler .al-eq-msg { flex: 1 1 16rem; }
 /* Save stays visible when there's nothing to save yet */
 #audioLeveler #alEqSave:disabled { background: transparent; color: var(--bs-secondary-color); border-color: var(--bs-border-color); opacity: 1; }
+
+/* ON AIR sign, an old studio lamp box: a worn brass frame with two screws,
+   and a scuffed, yellowed glass panel. Dark until the EQ is live in the show. */
+#audioLeveler .al-onair-frame {position: relative; display: inline-block; padding: 5px 14px; border-radius: 5px;
+    background: linear-gradient(160deg, #8a6a3a 0%, #5b4222 35%, #7d5e31 60%, #3e2c16 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 225, 160, .35), inset 0 -1px 2px rgba(0, 0, 0, .6), 0 2px 5px rgba(0, 0, 0, .55)}
+#audioLeveler .al-onair-frame::before, #audioLeveler .al-onair-frame::after {content: ""; position: absolute; top: 50%; width: 6px; height: 6px;
+    margin-top: -3px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #d9c08a, #6b5128 70%);
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .5)}
+#audioLeveler .al-onair-frame::before {left: 4px}
+#audioLeveler .al-onair-frame::after {right: 4px}
+#audioLeveler .al-onair {display: inline-block; padding: .32rem .95rem; border-radius: 3px; cursor: help;
+    font: 700 .95rem/1 "Arial Black", "Helvetica Neue", Arial, sans-serif; letter-spacing: .16em; text-transform: uppercase;
+    color: rgba(150, 140, 110, .45);
+    background:
+        repeating-linear-gradient(115deg, transparent 0 9px, rgba(255, 255, 255, .03) 9px 10px, transparent 10px 23px),
+        radial-gradient(ellipse at 22% 70%, rgba(120, 90, 30, .35), transparent 45%),
+        radial-gradient(ellipse at 80% 25%, rgba(90, 70, 20, .3), transparent 40%),
+        linear-gradient(#2d2f22, #1b1c14);
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, .85), inset 0 0 0 1px rgba(0, 0, 0, .6);
+    transition: color .3s, background .3s, box-shadow .3s, text-shadow .3s}
+#audioLeveler .al-onair-lit {color: rgba(242, 255, 225, .93);
+    text-shadow: 0 0 4px rgba(210, 255, 190, .9), 0 0 11px rgba(120, 230, 120, .8);
+    background:
+        repeating-linear-gradient(115deg, transparent 0 9px, rgba(255, 255, 230, .08) 9px 10px, transparent 10px 23px),
+        radial-gradient(ellipse at 22% 70%, rgba(150, 120, 30, .45), transparent 45%),
+        radial-gradient(ellipse at 80% 25%, rgba(120, 100, 25, .35), transparent 40%),
+        radial-gradient(ellipse at 50% 0%, rgba(230, 255, 190, .55), transparent 70%),
+        linear-gradient(#59b862, #2f7d36);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, .55), inset 0 0 10px rgba(40, 60, 10, .55), 0 0 12px rgba(110, 220, 110, .55), 0 0 26px rgba(110, 220, 110, .3)}

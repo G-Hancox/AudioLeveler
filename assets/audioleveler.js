@@ -1521,8 +1521,7 @@
                         '<input type="range" class="form-range al-eq-slider" min="-12" max="12" step="0.5" data-band="' + i + '" aria-label="' + f + ' gain in dB">' +
                         '<span class="small text-body-secondary">' + f + '</span></div>';
                 }).join('') + '</div>' +
-                '<div id="alEqHint" class="form-text"></div>' +
-                '<div id="alEqSaveState" class="small text-body-secondary text-end mt-2" aria-live="polite"></div>' +
+                '<div class="d-flex justify-content-end mt-2"><span class="al-onair-frame"><span id="alOnAir" class="al-onair" role="status" aria-live="polite">On Air</span></span></div>' +
                 '</div></div>' +
                 '<div class="col-12 col-lg-5"><div class="rounded border p-3 h-100">' +
                 '<div class="d-flex align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase">Level</span>' +
@@ -1583,10 +1582,7 @@
         body.disabled = eq.mode === 'off';
         body.classList.toggle('al-eq-disabled', eq.mode === 'off');
         $id('alEqOffNote').classList.toggle('d-none', eq.mode !== 'off');
-        $id('alEqHint').innerHTML = eq.mode === 'show'
-            ? 'Like a radio: pick a preset and it\'s on, and kept. Moving a slider makes your own Custom setting. The presets only cut, so the transmitter never gets a hotter signal.'
-            : 'Here in your browser only, and kept for when you pick Live. Moving a slider makes your own Custom setting. The presets only cut.';
-        $id('alEqSaveState').innerHTML = eqSaveStateHtml();
+        eqOnAir();
         // My presets
         $id('alEqMine').innerHTML = eq.presets.map(function (p, i) {
             var on = p.gains.join() === eq.gains.join();
@@ -1755,21 +1751,33 @@
         });
     }
 
-    function eqSaveStateHtml() {
-        if (eq.mode === 'off') { return ''; }
-        if (eq.saving) {
-            return eq.on && eq.fppQuiet && !eq.rebootPending
-                ? '<i class="fas fa-spinner fa-spin"></i> Saving into FPP: its audio restarts for a few seconds&hellip;'
-                : '<i class="fas fa-spinner fa-spin"></i> Saving&hellip;';
+    // The ON AIR sign, like a radio studio's: lit green while the EQ is live
+    // in the show and kept; dark while it's being saved into FPP (its audio
+    // restarts for a few seconds), and when it isn't on air at all. The
+    // details are in its tooltip.
+    function eqOnAir() {
+        var el = $id('alOnAir');
+        if (!el) { return; }
+        var lit = false, tip;
+        if (eq.mode !== 'show') {
+            tip = eq.mode === 'try' ? 'Preview: in your browser only, not on air. Your pick is kept for when you go Live.' : 'The EQ is off.';
+        } else if (eq.rebootPending) {
+            tip = 'Not on air yet: reboot FPP to finish. Your pick is kept.';
+        } else if (eq.saving && eq.fppQuiet) {
+            tip = 'Saving into FPP: its audio restarts for a few seconds.';
+        } else if (eqDirty() || eq.saveTimer || eq.saving) {
+            lit = true;
+            tip = 'On air. Saving your pick…';
+        } else if (eqNeedsFpp()) {
+            lit = true;
+            tip = 'On air and kept. It goes into FPP\'s own settings by itself when the playing stops (that restarts FPP\'s audio for a few seconds).';
+        } else {
+            lit = true;
+            tip = 'On air, and saved in FPP.';
         }
-        if (eqDirty() || eq.saveTimer) { return 'Saving&hellip;'; }
-        if (eq.mode !== 'show') { return '<i class="fas fa-check text-success"></i> Kept for when you go Live'; }
-        if (eq.rebootPending) { return '<i class="fas fa-check text-success"></i> Kept: in the show after the reboot'; }
-        if (eqNeedsFpp()) {
-            return '<i class="fas fa-circle text-warning"></i> <b>On now and kept.</b> Goes into FPP\'s own settings by itself when the playing stops ' +
-                '(saving restarts FPP\'s audio for a few seconds).';
-        }
-        return '<i class="fas fa-check text-success"></i> Saved in FPP';
+        el.classList.toggle('al-onair-lit', lit);
+        el.title = tip;
+        el.setAttribute('aria-label', tip);
     }
 
     function wireEq() {
