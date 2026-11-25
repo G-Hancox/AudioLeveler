@@ -1616,7 +1616,7 @@
         });
         $id('alEqDirty').classList.toggle('d-none', !eqDirty());
         $id('alEqUndo').disabled = !eqDirty();
-        $id('alEqSave').disabled = !eqDirty() || eq.busy || (eq.mode === 'show' && eq.showRunning);
+        $id('alEqSave').disabled = !eqDirty() || eq.busy;
         $id('alTxWrap').classList.toggle('d-none', !eq.kfmt);
         $id('alTxClear').classList.toggle('d-none', !eq.kfmt);
         // Test songs: the Songs list as it stands
@@ -1787,6 +1787,16 @@
         });
         $id('alEqUndo').addEventListener('click', function () { eqSetGains(eq.saved.slice()); });
         $id('alEqSave').addEventListener('click', function () {
+            if (eq.mode === 'show' && eq.showRunning) {
+                // Saving to FPP restarts its audio (as FPP's own Save does): never mid-song.
+                var c = $id('alEqConfirm');
+                c.innerHTML = '<b>Stop the song first, then Save to FPP.</b> Saving restarts FPP\'s audio for a few seconds, the same as FPP\'s own Save, ' +
+                    'so it won\'t while something is playing. What you\'re hearing now stays until you leave this page.' +
+                    ' <div class="mt-2"><button type="button" class="btn btn-sm btn-outline-secondary" data-eq-confirm="cancel">OK</button></div>';
+                c.classList.remove('d-none');
+                return;
+            }
+            $id('alEqConfirm').classList.add('d-none');
             eq.busy = true;
             renderEq();
             api('POST', 'eq/save', { gains: eq.gains, preset: eq.preset }).then(function (j) {

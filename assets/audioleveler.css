@@ -134,3 +134,5 @@
 #audioLeveler .al-eq-disabled canvas { opacity: .45; }
 #audioLeveler .al-eq-mode .btn.active { background: var(--bs-success); border-color: var(--bs-success); color: #fff; }
 #audioLeveler .al-eq-msg { flex: 1 1 16rem; }
+/* Save stays visible when there's nothing to save yet */
+#audioLeveler #alEqSave:disabled { background: transparent; color: var(--bs-secondary-color); border-color: var(--bs-border-color); opacity: 1; }
