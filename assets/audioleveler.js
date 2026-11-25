@@ -1563,9 +1563,11 @@
             st.innerHTML =
                 '<span class="small fw-semibold text-body-secondary text-uppercase">EQ</span>' +
                 '<span class="btn-group btn-group-sm al-eq-mode" role="group" aria-label="Audio EQ">' +
-                seg('off', 'Off', 'FPP untouched', eq.on && lock) +
-                seg('try', 'Preview', 'In your browser only', eq.on && lock) +
-                seg('show', 'Live', eq.supported ? 'On your speakers and FM (reboot)' : 'Needs FPP\'s PipeWire audio groups', !eq.supported || (!eq.on && lock)) +
+                // Always clickable (except mid-change): a click that can't go
+                // ahead says why in the box below instead of doing nothing.
+                seg('off', 'Off', 'FPP untouched', eq.busy) +
+                seg('try', 'Preview', 'In your browser only', eq.busy) +
+                seg('show', 'Live', 'On your speakers and FM (reboot)', eq.busy) +
                 '</span>' + helpIconHtml(EQ_WARNINGS) +
                 '<span class="small text-body-secondary al-eq-msg">' + msg + '</span>';
             initTips(st);
@@ -1641,7 +1643,21 @@
     // Switching Live on or off asks first, with what it will do.
     function eqAskToggle(target) {
         var c = $id('alEqConfirm');
-        if (eq.showRunning) { toast('A show is playing. Stop it first: this restarts FPP\'s audio.', false); return; }
+        var why = function (html) {
+            c.innerHTML = html + ' <div class="mt-2"><button type="button" class="btn btn-sm btn-outline-secondary" data-eq-confirm="cancel">OK</button></div>';
+            c.classList.remove('d-none');
+        };
+        if (!eq.on && !eq.supported) {
+            why('<b>Live isn\'t available on this FPP.</b> It needs FPP\'s PipeWire audio (FPP 10, Media Backend set to Simple or Advanced ' +
+                'under Settings &gt; Audio/Video). Preview still works here in your browser.');
+            return;
+        }
+        if (eq.showRunning) {
+            why('<b>Something is playing in FPP' + (eq.playingName ? ' (' + esc(eq.playingName) + ')' : '') + '.</b> ' +
+                (eq.on ? 'Taking the EQ off live' : 'Going live') + ' restarts FPP\'s audio, so stop it first ' +
+                '(Status/Control page &gt; Stop), then try again.');
+            return;
+        }
         eq.pendingMode = target;
         c.innerHTML = eq.on
             ? '<b>Take the EQ off live?</b> FPP\'s audio settings go back exactly as they were before, then FPP needs a reboot. ' +
@@ -1835,6 +1851,7 @@
                 var cur = st && st.current_playlist && st.current_playlist.playlist;
                 var was = eq.showRunning;
                 eq.showRunning = !!st && st.status_name !== 'idle' && cur !== PREVIEW_PLAYLIST;
+                eq.playingName = eq.showRunning ? (cur || '') : '';
                 if (was !== eq.showRunning) { renderEq(); }
             }).catch(function () { /* fppd down */ });
             pollTx();
