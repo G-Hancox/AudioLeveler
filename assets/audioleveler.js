@@ -1512,7 +1512,7 @@
                 '</div>' +
                 '<div class="row g-3">' +
                 '<div class="col-12 col-lg-7"><div class="al-hifi p-3 h-100">' +
-                '<div class="d-flex justify-content-center mb-3"><span class="al-onair-frame"><span id="alOnAir" class="al-onair" role="status" aria-live="polite">On Air</span></span></div>' +
+                '<div class="d-flex justify-content-center mb-3"><span class="al-onair-frame"><span id="alOnAir" class="al-onair" role="status" aria-live="polite" tabindex="0">On Air</span></span></div>' +
                 '<div class="d-flex flex-wrap align-items-center gap-2 mb-2"><span class="small fw-semibold text-body-secondary text-uppercase me-auto">Equalizer (dB)</span>' +
                 '<span id="alEqAB" class="btn-group btn-group-sm" role="group" aria-label="Hear the EQ">' +
                 '<button type="button" class="btn btn-outline-secondary" data-ab="before" title="Hear it with the EQ flat">Before</button>' +
@@ -1537,7 +1537,7 @@
                 '</div></div></div>' +
                 '<div class="d-flex flex-wrap align-items-center gap-2 mt-3">' +
                 '<span class="small text-body-secondary">Test song</span>' +
-                '<select id="alEqSong" class="form-select form-select-sm w-auto" aria-label="Song to test the EQ with"></select>' +
+                '<select id="alEqSong" class="form-select form-select-sm w-auto mw-100" aria-label="Song to test the EQ with"></select>' +
                 '<button id="alEqPlay" type="button" class="buttons btn btn-sm btn-outline-success"><i class="fas fa-fw fa-play"></i> Play</button>' +
                 '<span class="small text-body-secondary">The player below has Stop, Next and <b>Play through the show</b>, to hear it on your speakers and FM.</span>' +
                 '</div></fieldset>';
@@ -1888,6 +1888,10 @@
             eq.custom = g.map(function (x) { return Math.max(-12, Math.min(12, Math.round(x * 2) / 2)); });
             eqSetGains(g);
         });
+        // The lamp's details on a tap or Enter too, not only on hover (phones).
+        var onAirTip = function () { toast($id('alOnAir').title); };
+        $id('alOnAir').addEventListener('click', onAirTip);
+        $id('alOnAir').addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAirTip(); } });
         $id('alEqPlay').addEventListener('click', function () {
             var n = $id('alEqSong').value;
             if (!n) { return; }
