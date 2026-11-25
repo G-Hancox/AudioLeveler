@@ -1553,19 +1553,20 @@
                 return '<button type="button" class="btn btn-outline-secondary' + (eq.mode === m ? ' active' : '') + '" data-eqmode="' + m + '"' +
                     ' aria-pressed="' + (eq.mode === m ? 'true' : 'false') + '" title="' + esc(title) + '"' + (disabled ? ' disabled' : '') + '>' + label + '</button>';
             };
+            // Short: the switch already shows the mode, the ON AIR lamp shows
+            // live, and a click that can't go ahead says why. Only what you
+            // need to act on, or which card it's on, goes here.
             var msg;
-            if (eq.mode === 'show') {
-                msg = eq.rebootPending ? '<b>Live: reboot FPP to finish</b> &middot; use the Reboot button at the top of FPP'
-                    : '<b>Live</b>' + (eq.cardName ? ' &middot; shaping <b>' + esc(eq.cardName) + '</b>, on your speakers and FM' : ' &middot; on your speakers and FM');
+            if (eq.rebootPending) {
+                msg = '<b>Reboot FPP to finish</b> (Reboot button at the top of FPP)';
+            } else if (eq.mode === 'show') {
+                msg = eq.cardName ? 'On <b>' + esc(eq.cardName) + '</b>' : '';
             } else if (eq.mode === 'try') {
-                msg = '<b>Preview</b> &middot; in your browser only, not on your speakers or FM' +
-                    (eq.rebootPending ? ' &middot; <b>reboot FPP to finish putting FPP back</b>' : '');
+                msg = 'In your browser only';
             } else {
-                msg = '<b>Off</b> &middot; FPP\'s audio is as you set it' +
-                    (eq.rebootPending ? ' &middot; <b>reboot FPP to finish putting it back</b>' : '');
+                msg = '';
             }
-            if (!eq.supported) { msg += ' &middot; this FPP has no PipeWire audio groups, so Live isn\'t available'; }
-            if (eq.showRunning) { msg += ' &middot; a show is playing, so Live can\'t be switched now'; }
+            if (!eq.supported) { msg += (msg ? ' &middot; ' : '') + 'Live needs FPP\'s PipeWire audio'; }
             st.innerHTML =
                 '<span class="small fw-semibold text-body-secondary text-uppercase">EQ</span>' +
                 '<span class="btn-group btn-group-sm al-eq-mode" role="group" aria-label="Audio EQ">' +
